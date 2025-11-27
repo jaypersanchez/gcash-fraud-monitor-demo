@@ -47,6 +47,16 @@
               <div id="action-status" class="muted" style="margin-top:8px;"></div>
             </div>
             <div class="card" style="background:#f8fbff;border:1px solid #e1e9f5;">
+              <h4 style="margin: 0 0 8px 0">Case Context</h4>
+              <div id="context-info" class="muted" style="margin-bottom:8px;">No context available.</div>
+              <textarea id="note-input" rows="3" style="width:100%; border-radius:8px; border:1px solid #e1e9f5; padding:8px;" placeholder="Add investigator note..."></textarea>
+              <div class="flex-between" style="margin-top:8px;">
+                <button class="btn btn-secondary" id="add-note">Add Note</button>
+                <div class="muted" id="note-count">0 note(s)</div>
+              </div>
+              <ul id="note-list" class="list" style="margin-top:8px;"></ul>
+            </div>
+            <div class="card" style="background:#f8fbff;border:1px solid #e1e9f5;">
               <h4 style="margin: 0 0 8px 0">How to read this graph</h4>
               <ul style="margin:0; padding-left:16px; color:#627089; font-size:13px;">
                 <li><strong style="color:#ff8c42;">Orange</strong>: subject account (alerted)</li>
@@ -56,6 +66,10 @@
                 <li>Edges: <em>USES</em> (account → device), <em>PERFORMS</em> (account → transaction), <em>TO</em> (transaction → destination account)</li>
               </ul>
               <p style="margin:12px 0 0 0; color:#0c1a36; font-size:13px;">Pain point addressed: quickly spot mule patterns and shared devices without running Cypher manually—analysts get a visual of who the alerted account pays and which devices link them.</p>
+              <div class="grid-two" style="gap:8px; margin-top:8px;">
+                <button class="btn btn-secondary" id="open-workspace">Open Neo4j Workspace</button>
+                <button class="btn btn-secondary" id="open-importer">Open Data Importer</button>
+              </div>
             </div>
           </div>
 

@@ -18,12 +18,21 @@ const selectionInfo = document.getElementById("selection-info");
 const flagAccountBtn = document.getElementById("flag-account");
 const flagDeviceBtn = document.getElementById("flag-device");
 const actionStatus = document.getElementById("action-status");
+const contextInfo = document.getElementById("context-info");
+const noteInput = document.getElementById("note-input");
+const addNoteBtn = document.getElementById("add-note");
+const noteList = document.getElementById("note-list");
+const noteCount = document.getElementById("note-count");
+const openWorkspaceBtn = document.getElementById("open-workspace");
+const openImporterBtn = document.getElementById("open-importer");
 
 let alertsCache = [];
 let selectedAccountId = null;
 let selectedDeviceId = null;
 let lastParams = "";
 let selectedRuleKey = null;
+let selectedAlert = null;
+const notesByAnchor = {};
 
 const severityClass = (severity) => {
   const map = {
@@ -84,6 +93,7 @@ async function fetchAlerts() {
     if (data && data.length) {
       const first = data[0];
       const anchorRule = first.ruleKey || rule;
+      selectedAlert = first;
       selectedRuleKey = anchorRule;
       if (anchorRule === "R2") {
         selectedDeviceId = first.deviceId;
@@ -92,6 +102,8 @@ async function fetchAlerts() {
         selectedAccountId = first.accountId;
         selectedDeviceId = null;
       }
+      updateSelectionInfo();
+      renderContext();
       loadGraphForSelected();
     } else if (neoStatus) {
       neoStatus.textContent = "No alerts to load graph.";
@@ -134,9 +146,11 @@ function renderAlerts(alerts) {
         if (neoStatus) neoStatus.textContent = `Selected account ${alert.accountId} (${rowRule})`;
       }
       selectedRuleKey = rowRule;
+      selectedAlert = alert;
       Array.from(alertsBody.children).forEach((tr) => tr.classList.remove("selected-row"));
       row.classList.add("selected-row");
       updateSelectionInfo();
+      renderContext();
       loadGraphForSelected();
     });
     alertsBody.appendChild(row);
@@ -338,6 +352,7 @@ function updateSelectionInfo() {
   if (selectionInfo) {
     selectionInfo.textContent = anchor ? `Selected ${anchor} (${ruleLabel})` : "No selection yet.";
   }
+  renderContext();
 }
 
 async function flagAnchor() {
@@ -376,6 +391,87 @@ if (flagAccountBtn) {
 }
 if (flagDeviceBtn) {
   flagDeviceBtn.addEventListener("click", flagAnchor);
+}
+
+if (addNoteBtn) {
+  addNoteBtn.addEventListener("click", () => {
+    const anchor = (selectedRuleKey === "R2" ? selectedDeviceId : selectedAccountId) || (selectedAlert && (selectedAlert.deviceId || selectedAlert.accountId));
+    if (!anchor) {
+      if (actionStatus) actionStatus.textContent = "No selection to add note.";
+      return;
+    }
+    const note = (noteInput && noteInput.value.trim()) || "";
+    if (!note) return;
+    const key = `${selectedRuleKey || getRule()}:${anchor}`;
+    if (!notesByAnchor[key]) notesByAnchor[key] = [];
+    notesByAnchor[key].push({ text: note, ts: new Date().toISOString() });
+    noteInput.value = "";
+    renderNotes(key);
+    if (actionStatus) actionStatus.textContent = "Note added (session only).";
+  });
+}
+
+if (openWorkspaceBtn) {
+  openWorkspaceBtn.addEventListener("click", () => {
+    window.open("https://workspace.neo4j.io", "_blank");
+  });
+}
+if (openImporterBtn) {
+  openImporterBtn.addEventListener("click", () => {
+    window.open("https://data-importer.neo4j.io", "_blank");
+  });
+}
+
+function renderContext() {
+  if (!contextInfo) return;
+  const ruleLabel = selectedRuleKey || getRule();
+  const a = selectedAlert || {};
+  const anchor = ruleLabel === "R2" ? (selectedDeviceId || a.deviceId) : (selectedAccountId || a.accountId);
+  if (!anchor) {
+    contextInfo.textContent = "No context available.";
+    renderNotes(null);
+    return;
+  }
+  let lines = [];
+  lines.push(`Rule: ${a.rule || ruleLabel}`);
+  lines.push(`Anchor: ${anchor}`);
+  if (ruleLabel === "R1") {
+    lines.push(`Risk: ${a.riskScore ?? "-"}`);
+    lines.push(`is_fraud: ${a.isFraud}`);
+  }
+  if (ruleLabel === "R2") {
+    lines.push(`Risky accounts: ${a.riskyAccounts ?? "-"}`);
+    lines.push(`Total accounts: ${a.totalAccounts ?? "-"}`);
+  }
+  if (ruleLabel === "R3") {
+    lines.push(`Ring size: ${a.ringSize ?? "-"}`);
+    lines.push(`Risk: ${a.riskScore ?? "-"}`);
+  }
+  if (ruleLabel === "R7") {
+    lines.push(`Risky senders: ${a.riskySenders ?? "-"}`);
+    lines.push(`Tx count: ${a.txCount ?? "-"}`);
+    lines.push(`Risk: ${a.riskScore ?? "-"}`);
+  }
+  contextInfo.textContent = lines.join(" | ");
+
+  const key = `${ruleLabel}:${anchor}`;
+  renderNotes(key);
+}
+
+function renderNotes(key) {
+  if (!noteList || !noteCount) return;
+  noteList.innerHTML = "";
+  if (!key || !notesByAnchor[key] || !notesByAnchor[key].length) {
+    noteCount.textContent = "0 note(s)";
+    return;
+  }
+  const notes = notesByAnchor[key];
+  noteCount.textContent = `${notes.length} note(s)`;
+  notes.forEach((n) => {
+    const li = document.createElement("li");
+    li.textContent = `${new Date(n.ts).toLocaleString()}: ${n.text}`;
+    noteList.appendChild(li);
+  });
 }
 
 updateSelectionInfo();
