@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GCash Fraud Monitor Demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <nav class="nav">
+        <div>
+          <h1>GCash Fraud Monitor — Demo</h1>
+          <span>Fraud detection walkthrough with Neo4j placeholder</span>
+        </div>
+        <button id="alerts-nav" class="btn btn-secondary">Alerts</button>
+      </nav>
+
+      <div class="stack" style="margin-top: 16px">
+        <section class="card stack" id="alerts-section">
+          <div class="flex-between">
+            <div>
+              <h2 style="margin: 0">Alerts</h2>
+              <span class="muted">Sorted by severity and time</span>
+            </div>
+            <button class="btn" id="refresh-alerts">Refresh Alerts</button>
+          </div>
+          <div style="overflow-x: auto">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Severity</th>
+                  <th>ID</th>
+                  <th>Rule</th>
+                  <th>Summary</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="alerts-body"></tbody>
+            </table>
+          </div>
+          <div id="alerts-empty" class="placeholder" style="display: none">
+            No alerts yet. Run refresh to simulate detections.
+          </div>
+        </section>
+
+        <section class="stack" id="case-section">
+          <div class="card stack">
+            <h3 style="margin: 0">Graph View (Neo4j/Bloom)</h3>
+            <div class="placeholder">
+              In the full integration, this area will show a Neo4j graph (e.g., via Bloom).
+            </div>
+            <div class="grid-two">
+              <button class="btn btn-secondary" id="neo-test">Test Neo4j Connectivity</button>
+              <button class="btn btn-secondary" id="load-graph">Load Graph for Top Alert</button>
+            </div>
+            <div id="neo-status" class="muted"></div>
+            <div class="card" style="overflow: auto; background: #f8fbff; border: 1px dashed #e1e9f5;">
+              <svg id="graph-svg" width="100%" height="320"></svg>
+            </div>
+            <div class="card" style="background:#f8fbff;border:1px solid #e1e9f5;">
+              <h4 style="margin: 0 0 8px 0">How to read this graph</h4>
+              <ul style="margin:0; padding-left:16px; color:#627089; font-size:13px;">
+                <li><strong style="color:#ff8c42;">Orange</strong>: subject account (alerted)</li>
+                <li><strong style="color:#0077f6;">Blue</strong>: other accounts receiving funds from subject</li>
+                <li><strong style="color:#01c2c5;">Teal</strong>: devices the subject uses (shared devices indicate risk)</li>
+                <li><strong style="color:#ffd166;">Yellow</strong>: transactions originating from the subject</li>
+                <li>Edges: <em>USES</em> (account → device), <em>PERFORMS</em> (account → transaction), <em>TO</em> (transaction → destination account)</li>
+              </ul>
+              <p style="margin:12px 0 0 0; color:#0c1a36; font-size:13px;">Pain point addressed: quickly spot mule patterns and shared devices without running Cypher manually—analysts get a visual of who the alerted account pays and which devices link them.</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

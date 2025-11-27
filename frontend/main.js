@@ -1,0 +1,213 @@
+const API_BASE = "http://localhost:5005/api";
+
+const alertsBody = document.getElementById("alerts-body");
+const alertsEmpty = document.getElementById("alerts-empty");
+const refreshBtn = document.getElementById("refresh-alerts");
+const alertsNav = document.getElementById("alerts-nav");
+const alertsSection = document.getElementById("alerts-section");
+const neoTestButton = document.getElementById("neo-test");
+const neoStatus = document.getElementById("neo-status");
+const graphSvg = document.getElementById("graph-svg");
+const loadGraphBtn = document.getElementById("load-graph");
+
+let alertsCache = [];
+
+const severityClass = (severity) => {
+  const map = {
+    CRITICAL: "badge-critical",
+    HIGH: "badge-high",
+    MEDIUM: "badge-medium",
+    LOW: "badge-low",
+    Critical: "badge-critical",
+    High: "badge-high",
+    Medium: "badge-medium",
+  };
+  return map[severity] || "badge-low";
+};
+
+async function fetchAlerts() {
+  setLoadingState(true);
+  try {
+    const res = await fetch(`${API_BASE}/neo-alerts`);
+    const data = await res.json();
+    renderAlerts(data);
+  } catch (err) {
+    console.error("Failed to fetch alerts", err);
+  } finally {
+    setLoadingState(false);
+  }
+}
+
+function renderAlerts(alerts) {
+  alertsBody.innerHTML = "";
+  alertsEmpty.style.display = alerts.length ? "none" : "block";
+  alertsCache = alerts;
+
+  alerts.forEach((alert) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><span class="badge ${severityClass(alert.severity)}">${alert.severity}</span></td>
+      <td class="muted">#${alert.id}</td>
+      <td>${alert.rule || "Account Risk"}</td>
+      <td>${alert.summary}</td>
+      <td><span class="status-chip">${alert.status}</span></td>
+      <td class="muted">${alert.created ? new Date(alert.created).toLocaleString() : ""}</td>
+    `;
+    // No case detail for Neo-only alerts, so no row click here.
+    alertsBody.appendChild(row);
+  });
+}
+
+async function refreshAlerts() {
+  refreshBtn.textContent = "Refreshing...";
+  refreshBtn.disabled = true;
+  try {
+    await fetchAlerts();
+  } catch (err) {
+    console.error("Failed to refresh alerts", err);
+  } finally {
+    refreshBtn.textContent = "Refresh Alerts";
+    refreshBtn.disabled = false;
+  }
+}
+function setLoadingState(isLoading) {
+  refreshBtn.textContent = isLoading ? "Loading..." : "Refresh Alerts";
+  refreshBtn.disabled = isLoading;
+}
+
+refreshBtn.addEventListener("click", refreshAlerts);
+
+alertsNav.addEventListener("click", () => {
+  alertsSection.scrollIntoView({ behavior: "smooth" });
+});
+
+async function testNeo4j() {
+  if (!neoStatus) return;
+  neoStatus.textContent = "Testing Neo4j connectivity...";
+  try {
+    const res = await fetch(`${API_BASE}/neo4j/health`);
+    const data = await res.json();
+    if (res.ok && data.status === "ok") {
+      neoStatus.textContent = "Neo4j connection successful.";
+    } else {
+      neoStatus.textContent = `Neo4j error: ${data.message || "Unknown error"}`;
+    }
+  } catch (err) {
+    neoStatus.textContent = "Neo4j connectivity check failed.";
+    console.error(err);
+  }
+}
+
+if (neoTestButton) {
+  neoTestButton.addEventListener("click", testNeo4j);
+}
+
+async function loadGraphForTopAlert() {
+  if (!alertsCache.length) {
+    if (neoStatus) neoStatus.textContent = "No alerts loaded yet.";
+    return;
+  }
+  const first = alertsCache[0];
+  const accountId = first.accountId;
+  if (!accountId) {
+    if (neoStatus) neoStatus.textContent = "No accountId found on alert.";
+    return;
+  }
+  neoStatus.textContent = `Loading graph for ${accountId}...`;
+  try {
+    const res = await fetch(`${API_BASE}/neo4j/graph/account/${encodeURIComponent(accountId)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      neoStatus.textContent = data.message || "Graph load failed.";
+      return;
+    }
+    neoStatus.textContent = `Graph loaded for ${accountId}.`;
+    renderGraph(data.nodes || [], data.edges || []);
+  } catch (err) {
+    neoStatus.textContent = "Graph load failed.";
+    console.error(err);
+  }
+}
+
+function renderGraph(nodes, edges) {
+  if (!graphSvg) return;
+  const width = graphSvg.clientWidth || 600;
+  const height = 320;
+  graphSvg.setAttribute("width", width);
+  graphSvg.setAttribute("height", height);
+  graphSvg.innerHTML = "";
+
+  const accounts = nodes.filter((n) => n.type === "Account");
+  const devices = nodes.filter((n) => n.type === "Device");
+  const txs = nodes.filter((n) => n.type === "Transaction");
+
+  const layout = (arr, y) => arr.map((n, idx) => ({ ...n, x: 80 + idx * (width / Math.max(arr.length, 1)), y }));
+  const accPlaced = layout(accounts, 60);
+  const devPlaced = layout(devices, 160);
+  const txPlaced = layout(txs, 260);
+  const placedMap = {};
+  [...accPlaced, ...devPlaced, ...txPlaced].forEach((n) => (placedMap[n.id] = n));
+
+  const svgNS = "http://www.w3.org/2000/svg";
+
+  const defs = document.createElementNS(svgNS, "defs");
+  const marker = document.createElementNS(svgNS, "marker");
+  marker.setAttribute("id", "arrow");
+  marker.setAttribute("markerWidth", "10");
+  marker.setAttribute("markerHeight", "10");
+  marker.setAttribute("refX", "5");
+  marker.setAttribute("refY", "3");
+  marker.setAttribute("orient", "auto");
+  const path = document.createElementNS(svgNS, "path");
+  path.setAttribute("d", "M0,0 L0,6 L6,3 z");
+  path.setAttribute("fill", "#a5b4d0");
+  marker.appendChild(path);
+  defs.appendChild(marker);
+  graphSvg.appendChild(defs);
+
+  edges.forEach((e) => {
+    const src = placedMap[e.source];
+    const tgt = placedMap[e.target];
+    if (!src || !tgt) return;
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("x1", src.x);
+    line.setAttribute("y1", src.y);
+    line.setAttribute("x2", tgt.x);
+    line.setAttribute("y2", tgt.y);
+    line.setAttribute("stroke", "#a5b4d0");
+    line.setAttribute("stroke-width", "2");
+    line.setAttribute("marker-end", "url(#arrow)");
+    graphSvg.appendChild(line);
+  });
+
+  const drawNode = (n, color) => {
+    const g = document.createElementNS(svgNS, "g");
+    const circle = document.createElementNS(svgNS, "circle");
+    circle.setAttribute("cx", n.x);
+    circle.setAttribute("cy", n.y);
+    circle.setAttribute("r", 14);
+    circle.setAttribute("fill", color);
+    circle.setAttribute("stroke", "#0c1a36");
+    circle.setAttribute("stroke-width", "1");
+    g.appendChild(circle);
+    const text = document.createElementNS(svgNS, "text");
+    text.setAttribute("x", n.x);
+    text.setAttribute("y", n.y + 28);
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("font-size", "10");
+    text.setAttribute("fill", "#0c1a36");
+    text.textContent = n.label;
+    g.appendChild(text);
+    graphSvg.appendChild(g);
+  };
+
+  accPlaced.forEach((n) => drawNode(n, n.isSubject ? "#ff8c42" : "#0077f6"));
+  devPlaced.forEach((n) => drawNode(n, "#01c2c5"));
+  txPlaced.forEach((n) => drawNode(n, "#ffd166"));
+}
+
+if (loadGraphBtn) {
+  loadGraphBtn.addEventListener("click", loadGraphForTopAlert);
+}
+
+fetchAlerts();
