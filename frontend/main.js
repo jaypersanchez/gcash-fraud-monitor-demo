@@ -65,7 +65,9 @@ async function fetchAlerts() {
     }
     params.append("limit", getLimit());
     lastParams = params.toString();
-    const endpoint = rule === "R1" ? "/neo-alerts/r1" : "/neo-alerts/r2";
+    let endpoint = "/neo-alerts/r1";
+    if (rule === "R2") endpoint = "/neo-alerts/r2";
+    if (rule === "R3") endpoint = "/neo-alerts/r3";
     const res = await fetch(`${API_BASE}${endpoint}?${params.toString()}`);
     const data = await res.json();
     renderAlerts(data);

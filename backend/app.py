@@ -94,6 +94,27 @@ def fetch_device_alerts_r2(tx, high_risk: float, min_risky: int, limit: int):
     return [record.data() for record in result]
 
 
+def fetch_mule_ring_alerts_r3(tx, min_risky: int, limit: int):
+    cypher = """
+    MATCH (a:Account)-[:PERFORMS]->(t:Transaction {tags:'mule_ring'})-[:TO]->(b:Account)
+    WITH a, b, collect(DISTINCT t) AS txs
+    WITH collect(DISTINCT a) + collect(DISTINCT b) AS accounts, txs
+    WITH accounts, txs, size(accounts) AS ringSize
+    WHERE ringSize >= $minRisky
+    UNWIND accounts AS acc
+    RETURN DISTINCT
+      acc.account_number AS accountId,
+      acc.customer_name AS customerName,
+      acc.risk_score AS riskScore,
+      acc.is_fraud AS isFraud,
+      ringSize AS ringSize
+    ORDER BY ringSize DESC, riskScore DESC
+    LIMIT $limit
+    """
+    result = tx.run(cypher, minRisky=min_risky, limit=limit)
+    return [record.data() for record in result]
+
+
 def create_app():
     load_dotenv()
     app = Flask(__name__)
@@ -215,6 +236,43 @@ def create_app():
                     "totalAccounts": total,
                     "severity": severity,
                     "rule": "R2 – Shared risky device",
+                    "summary": summary,
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+        return jsonify(alerts)
+
+    @app.route("/api/neo-alerts/r3", methods=["GET"])
+    def neo4j_mule_ring_alerts_r3():
+        if not driver:
+            return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
+        try:
+            min_risky = int(request.args.get("minRiskyAccounts", 3))
+        except Exception:
+            min_risky = 3
+        try:
+            limit = int(request.args.get("limit", 20))
+        except Exception:
+            limit = 20
+        with driver.session() as session:
+            records = session.execute_read(fetch_mule_ring_alerts_r3, min_risky, limit)
+
+        alerts = []
+        for idx, rec in enumerate(records, start=1):
+            ring_size = rec.get("ringSize") or 0
+            risk = rec.get("riskScore") or 0
+            severity = "Critical" if ring_size >= 5 else "High"
+            summary = f"Account {rec.get('accountId')} in ring of size {ring_size} (risk={risk:.2f})"
+            alerts.append(
+                {
+                    "id": idx,
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "riskScore": risk,
+                    "ringSize": ring_size,
+                    "severity": severity,
+                    "rule": "R3 – Mule ring flow",
                     "summary": summary,
                     "status": "Open",
                     "created": datetime.utcnow().isoformat() + "Z",
