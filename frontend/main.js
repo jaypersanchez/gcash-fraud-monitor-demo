@@ -231,10 +231,9 @@ async function loadGraphForSelected() {
 
 function renderGraph(nodes, edges) {
   if (!graphSvg) return;
-  const width = graphSvg.clientWidth || 600;
-  const height = 320;
-  graphSvg.setAttribute("width", width);
-  graphSvg.setAttribute("height", height);
+  const width = 1200;
+  const height = 800;
+  graphSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   graphSvg.innerHTML = "";
 
   const accounts = nodes.filter((n) => n.type === "Account");
