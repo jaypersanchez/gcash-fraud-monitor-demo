@@ -59,8 +59,11 @@ async function fetchAlerts() {
     const rule = getRule();
     if (rule === "R1") {
       params.append("riskThreshold", getRiskThreshold());
-    } else {
+    } else if (rule === "R2") {
       params.append("highRiskThreshold", getRiskThreshold());
+      params.append("minRiskyAccounts", getMinRisky());
+    } else if (rule === "R3" || rule === "R7") {
+      params.append("riskThreshold", getRiskThreshold());
       params.append("minRiskyAccounts", getMinRisky());
     }
     params.append("limit", getLimit());
@@ -68,6 +71,7 @@ async function fetchAlerts() {
     let endpoint = "/neo-alerts/r1";
     if (rule === "R2") endpoint = "/neo-alerts/r2";
     if (rule === "R3") endpoint = "/neo-alerts/r3";
+    if (rule === "R7") endpoint = "/neo-alerts/r7";
     const res = await fetch(`${API_BASE}${endpoint}?${params.toString()}`);
     const data = await res.json();
     renderAlerts(data);
@@ -75,9 +79,12 @@ async function fetchAlerts() {
       if (rule === "R1") {
         selectedAccountId = data[0].accountId;
         selectedDeviceId = null;
-      } else {
+      } else if (rule === "R2") {
         selectedDeviceId = data[0].deviceId;
         selectedAccountId = null;
+      } else {
+        selectedAccountId = data[0].accountId;
+        selectedDeviceId = null;
       }
       loadGraphForSelected();
     } else if (neoStatus) {
@@ -110,13 +117,18 @@ function renderAlerts(alerts) {
         selectedAccountId = alert.accountId;
         selectedDeviceId = null;
         if (neoStatus) neoStatus.textContent = `Selected account ${alert.accountId}`;
-      } else {
+      } else if (getRule() === "R2") {
         selectedDeviceId = alert.deviceId;
         selectedAccountId = null;
         if (neoStatus) neoStatus.textContent = `Selected device ${alert.deviceId}`;
+      } else {
+        selectedAccountId = alert.accountId;
+        selectedDeviceId = null;
+        if (neoStatus) neoStatus.textContent = `Selected account ${alert.accountId}`;
       }
       Array.from(alertsBody.children).forEach((tr) => tr.classList.remove("selected-row"));
       row.classList.add("selected-row");
+      loadGraphForSelected();
     });
     alertsBody.appendChild(row);
   });
@@ -170,7 +182,7 @@ async function loadGraphForSelected() {
   const rule = getRule();
   const accountId = selectedAccountId || (alertsCache[0] && alertsCache[0].accountId);
   const deviceId = selectedDeviceId || (alertsCache[0] && alertsCache[0].deviceId);
-  const anchor = rule === "R1" ? accountId : deviceId;
+  const anchor = rule === "R2" ? deviceId : accountId;
   if (!anchor) {
     if (neoStatus) neoStatus.textContent = "No anchor found on alert.";
     return;
@@ -178,7 +190,7 @@ async function loadGraphForSelected() {
   const paramsDisplay = lastParams ? ` (filters: ${lastParams})` : "";
   neoStatus.textContent = `Loading graph for ${anchor}${paramsDisplay}...`;
   try {
-    const endpoint = rule === "R1" ? "/neo4j/graph/account/" : "/neo4j/graph/device/";
+    const endpoint = rule === "R2" ? "/neo4j/graph/device/" : "/neo4j/graph/account/";
     const res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
     const data = await res.json();
     if (!res.ok) {
