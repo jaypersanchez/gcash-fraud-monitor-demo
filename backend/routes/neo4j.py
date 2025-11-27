@@ -19,9 +19,14 @@ def neo4j_graph_account(account_id: str):
     cypher = """
     MATCH (a:Account {account_number: $accountId})
     OPTIONAL MATCH (a)-[:USES]->(d:Device)
-    WITH a, collect(DISTINCT d) AS devices
-    OPTIONAL MATCH (a)-[:PERFORMS]->(t:Transaction)-[:TO]->(b:Account)
-    RETURN a, devices, collect(DISTINCT {tx: t, to: b}) AS tx_edges
+    OPTIONAL MATCH (d)<-[:USES]-(devAcc:Account)
+    OPTIONAL MATCH (a)-[:PERFORMS]->(txOut:Transaction)-[:TO]->(dst:Account)
+    OPTIONAL MATCH (src:Account)-[:PERFORMS]->(txIn:Transaction)-[:TO]->(a)
+    RETURN a,
+           collect(DISTINCT d) AS devices,
+           collect(DISTINCT devAcc) AS device_accounts,
+           collect(DISTINCT {tx: txOut, other: dst, direction: 'OUT'}) AS outbound,
+           collect(DISTINCT {tx: txIn, other: src, direction: 'IN'}) AS inbound
     """
     with get_driver() as driver:
         with driver.session() as session:
@@ -47,15 +52,39 @@ def neo4j_graph_account(account_id: str):
                 add_node(dev["device_id"], dev["device_id"], "Device", {"deviceType": dev.get("device_type")})
                 edges.append({"source": a["account_number"], "target": dev["device_id"], "type": "USES"})
 
-            for item in record["tx_edges"] or []:
-                tx = item.get("tx")
-                dest = item.get("to")
-                if not tx or not dest:
-                    continue
-                tx_ref = tx["tx_ref"]
-                add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
-                add_node(dest["account_number"], dest["account_number"], "Account", {"customerName": dest.get("customer_name")})
-                edges.append({"source": a["account_number"], "target": tx_ref, "type": "PERFORMS"})
-                edges.append({"source": tx_ref, "target": dest["account_number"], "type": "TO"})
+            for acc in record["device_accounts"] or []:
+                add_node(acc["account_number"], acc["account_number"], "Account", {"customerName": acc.get("customer_name")})
+                edges.append({"source": acc["account_number"], "target": a["account_number"], "type": "SHARES_DEVICE"})
+
+            def handle_tx(items):
+                for item in items or []:
+                    tx = item.get("tx")
+                    other = item.get("other")
+                    direction = item.get("direction")
+                    if not tx or not other:
+                        continue
+                    tx_ref = tx["tx_ref"]
+                    add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
+                    add_node(other["account_number"], other["account_number"], "Account", {"customerName": other.get("customer_name")})
+                    if direction == "OUT":
+                        edges.append({"source": a["account_number"], "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                        edges.append({"source": tx_ref, "target": other["account_number"], "type": "TO"})
+                    else:
+                        edges.append({"source": other["account_number"], "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                        edges.append({"source": tx_ref, "target": a["account_number"], "type": "TO"})
+
+            handle_tx(record.get("outbound"))
+            handle_tx(record.get("inbound"))
 
     return jsonify({"status": "ok", "nodes": list(nodes.values()), "edges": edges})
+
+
+def _edge_label(tx):
+    parts = []
+    amount = tx.get("amount")
+    tags = tx.get("tags")
+    if amount is not None:
+        parts.append(f"{amount}")
+    if tags:
+        parts.append(str(tags))
+    return " / ".join(parts)

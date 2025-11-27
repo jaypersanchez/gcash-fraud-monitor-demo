@@ -11,6 +11,7 @@ const graphSvg = document.getElementById("graph-svg");
 const loadGraphBtn = document.getElementById("load-graph");
 
 let alertsCache = [];
+let selectedAccountId = null;
 
 const severityClass = (severity) => {
   const map = {
@@ -31,6 +32,12 @@ async function fetchAlerts() {
     const res = await fetch(`${API_BASE}/neo-alerts`);
     const data = await res.json();
     renderAlerts(data);
+    if (data && data.length) {
+      selectedAccountId = data[0].accountId;
+      loadGraphForSelected();
+    } else if (neoStatus) {
+      neoStatus.textContent = "No alerts to load graph.";
+    }
   } catch (err) {
     console.error("Failed to fetch alerts", err);
   } finally {
@@ -53,7 +60,12 @@ function renderAlerts(alerts) {
       <td><span class="status-chip">${alert.status}</span></td>
       <td class="muted">${alert.created ? new Date(alert.created).toLocaleString() : ""}</td>
     `;
-    // No case detail for Neo-only alerts, so no row click here.
+    row.addEventListener("click", () => {
+      selectedAccountId = alert.accountId;
+      Array.from(alertsBody.children).forEach((tr) => tr.classList.remove("selected-row"));
+      row.classList.add("selected-row");
+      if (neoStatus) neoStatus.textContent = `Selected ${alert.accountId}`;
+    });
     alertsBody.appendChild(row);
   });
 }
@@ -103,12 +115,7 @@ if (neoTestButton) {
 }
 
 async function loadGraphForTopAlert() {
-  if (!alertsCache.length) {
-    if (neoStatus) neoStatus.textContent = "No alerts loaded yet.";
-    return;
-  }
-  const first = alertsCache[0];
-  const accountId = first.accountId;
+  const accountId = selectedAccountId || (alertsCache[0] && alertsCache[0].accountId);
   if (!accountId) {
     if (neoStatus) neoStatus.textContent = "No accountId found on alert.";
     return;
@@ -177,6 +184,11 @@ function renderGraph(nodes, edges) {
     line.setAttribute("stroke", "#a5b4d0");
     line.setAttribute("stroke-width", "2");
     line.setAttribute("marker-end", "url(#arrow)");
+    if (e.label) {
+      const title = document.createElementNS(svgNS, "title");
+      title.textContent = `${e.type}${e.label ? " - " + e.label : ""}`;
+      line.appendChild(title);
+    }
     graphSvg.appendChild(line);
   });
 

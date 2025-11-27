@@ -23,34 +23,6 @@
       </nav>
 
       <div class="stack" style="margin-top: 16px">
-        <section class="card stack" id="alerts-section">
-          <div class="flex-between">
-            <div>
-              <h2 style="margin: 0">Alerts</h2>
-              <span class="muted">Sorted by severity and time</span>
-            </div>
-            <button class="btn" id="refresh-alerts">Refresh Alerts</button>
-          </div>
-          <div style="overflow-x: auto">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Severity</th>
-                  <th>ID</th>
-                  <th>Rule</th>
-                  <th>Summary</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                </tr>
-              </thead>
-              <tbody id="alerts-body"></tbody>
-            </table>
-          </div>
-          <div id="alerts-empty" class="placeholder" style="display: none">
-            No alerts yet. Run refresh to simulate detections.
-          </div>
-        </section>
-
         <section class="stack" id="case-section">
           <div class="card stack">
             <h3 style="margin: 0">Graph View (Neo4j/Bloom)</h3>
@@ -59,7 +31,7 @@
             </div>
             <div class="grid-two">
               <button class="btn btn-secondary" id="neo-test">Test Neo4j Connectivity</button>
-              <button class="btn btn-secondary" id="load-graph">Load Graph for Top Alert</button>
+              <button class="btn btn-secondary" id="load-graph">Refresh Graph</button>
             </div>
             <div id="neo-status" class="muted"></div>
             <div class="card" style="overflow: auto; background: #f8fbff; border: 1px dashed #e1e9f5;">
@@ -77,6 +49,34 @@
               <p style="margin:12px 0 0 0; color:#0c1a36; font-size:13px;">Pain point addressed: quickly spot mule patterns and shared devices without running Cypher manually—analysts get a visual of who the alerted account pays and which devices link them.</p>
             </div>
           </div>
+
+          <section class="card stack" id="alerts-section">
+            <div class="flex-between">
+              <div>
+                <h2 style="margin: 0">Alerts</h2>
+                <span class="muted">Sorted by severity and time</span>
+              </div>
+              <button class="btn" id="refresh-alerts">Refresh Alerts</button>
+            </div>
+            <div style="overflow-x: auto">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Severity</th>
+                    <th>ID</th>
+                    <th>Rule</th>
+                    <th>Summary</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody id="alerts-body"></tbody>
+              </table>
+            </div>
+            <div id="alerts-empty" class="placeholder" style="display: none">
+              No alerts yet. Run refresh to simulate detections.
+            </div>
+          </section>
         </section>
       </div>
     </div>
