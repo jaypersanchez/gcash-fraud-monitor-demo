@@ -53,6 +53,13 @@
             <div class="card" style="background:#f8fbff;border:1px solid #e1e9f5;">
               <h4 style="margin: 0 0 8px 0">Case Context</h4>
               <div id="context-info" class="muted" style="margin-bottom:8px;">No context available.</div>
+              <div id="case-status" class="status-chip" style="display:inline-block; margin-bottom:8px;">Status: Open</div>
+              <div class="grid-two" style="gap: 8px; margin:8px 0;">
+                <button class="btn btn-secondary" id="case-block">Block Account</button>
+                <button class="btn btn-secondary" id="case-safe">Mark Safe</button>
+                <button class="btn btn-secondary" id="case-escalate">Escalate</button>
+              </div>
+              <div id="case-action-status" class="muted" style="margin-bottom:8px;"></div>
               <textarea id="note-input" rows="3" style="width:100%; border-radius:8px; border:1px solid #e1e9f5; padding:8px;" placeholder="Add investigator note..."></textarea>
               <div class="flex-between" style="margin-top:8px;">
                 <button class="btn btn-secondary" id="add-note">Add Note</button>

@@ -1,0 +1,120 @@
+@startuml
+hide circle
+skinparam linetype ortho
+skinparam class {
+  BackgroundColor Snow
+  BorderColor Black
+}
+
+entity graph_accounts {
+  * id : int <<PK>>
+  --
+  account_number : varchar
+  customer_name  : varchar
+  risk_score     : float
+  is_fraud       : boolean
+}
+
+entity graph_devices {
+  * id : int <<PK>>
+  --
+  device_id   : varchar
+  device_type : varchar
+}
+
+entity graph_account_device {
+  * account_id : int <<FK>>
+  * device_id  : int <<FK>>
+}
+
+entity graph_transactions {
+  * id : int <<PK>>
+  --
+  tx_ref          : varchar
+  from_account_id : int <<FK>>
+  to_account_id   : int <<FK>>
+  amount          : numeric
+  channel         : varchar
+  timestamp       : datetime
+  is_flagged      : boolean
+  tags            : varchar
+}
+
+entity rule_definitions {
+  * id : int <<PK>>
+  --
+  name         : varchar
+  description  : text
+  cypher_query : text
+  severity     : enum
+  enabled      : boolean
+  created_at   : timestamptz
+}
+
+entity accounts {
+  * id : int <<PK>>
+  --
+  account_number : varchar
+  customer_name  : varchar
+  risk_score     : float
+  created_at     : timestamptz
+}
+
+entity devices {
+  * id : int <<PK>>
+  --
+  device_id   : varchar
+  device_type : varchar
+  created_at  : timestamptz
+}
+
+entity alerts {
+  * id : int <<PK>>
+  --
+  rule_id            : int <<FK>>
+  subject_account_id : int <<FK>>
+  severity           : enum
+  status             : enum
+  summary            : text
+  details            : json
+  created_at         : timestamptz
+  updated_at         : timestamptz
+}
+
+entity cases {
+  * id : int <<PK>>
+  --
+  alert_id           : int <<FK>>
+  subject_account_id : int <<FK>>
+  status             : enum
+  network_summary    : text
+  linked_accounts    : json
+  linked_devices     : json
+  created_at         : timestamptz
+  updated_at         : timestamptz
+}
+
+entity case_actions {
+  * id : int <<PK>>
+  --
+  case_id      : int <<FK>>
+  action       : enum
+  performed_by : varchar
+  notes        : text
+  created_at   : timestamptz
+}
+
+' Graph relationships
+graph_account_device::account_id -- graph_accounts::id
+graph_account_device::device_id -- graph_devices::id
+graph_transactions::from_account_id -- graph_accounts::id
+graph_transactions::to_account_id -- graph_accounts::id
+
+' App relationships
+alerts::rule_id -- rule_definitions::id
+alerts::subject_account_id -- accounts::id
+cases::alert_id -- alerts::id
+cases::subject_account_id -- accounts::id
+case_actions::case_id -- cases::id
+
+@enduml

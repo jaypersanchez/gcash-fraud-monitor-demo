@@ -25,6 +25,11 @@ const noteList = document.getElementById("note-list");
 const noteCount = document.getElementById("note-count");
 const openWorkspaceBtn = document.getElementById("open-workspace");
 const openImporterBtn = document.getElementById("open-importer");
+const caseStatus = document.getElementById("case-status");
+const caseActionStatus = document.getElementById("case-action-status");
+const caseBlockBtn = document.getElementById("case-block");
+const caseSafeBtn = document.getElementById("case-safe");
+const caseEscalateBtn = document.getElementById("case-escalate");
 
 let alertsCache = [];
 let selectedAccountId = null;
@@ -33,6 +38,7 @@ let lastParams = "";
 let selectedRuleKey = null;
 let selectedAlert = null;
 const notesByAnchor = {};
+const actionsByAnchor = {};
 
 const severityClass = (severity) => {
   const map = {
@@ -364,6 +370,12 @@ function updateSelectionInfo() {
   renderContext();
 }
 
+function currentAnchorKey() {
+  const ruleLabel = selectedRuleKey || getRule();
+  const anchor = ruleLabel === "R2" ? selectedDeviceId : selectedAccountId;
+  return anchor ? `${ruleLabel}:${anchor}` : null;
+}
+
 async function flagAnchor() {
   const ruleLabel = selectedRuleKey || getRule();
   let endpoint = null;
@@ -444,6 +456,8 @@ function renderContext() {
   let lines = [];
   lines.push(`Rule: ${a.rule || ruleLabel}`);
   lines.push(`Anchor: ${anchor}`);
+  const statusEntry = actionsByAnchor[currentAnchorKey()] || { status: "Open" };
+  if (caseStatus) caseStatus.textContent = `Status: ${statusEntry.status}`;
   if (ruleLabel === "R1") {
     lines.push(`Risk: ${a.riskScore ?? "-"}`);
     lines.push(`is_fraud: ${a.isFraud}`);
@@ -482,6 +496,24 @@ function renderNotes(key) {
     noteList.appendChild(li);
   });
 }
+
+function handleCaseAction(action) {
+  const key = currentAnchorKey();
+  if (!key) {
+    if (caseActionStatus) caseActionStatus.textContent = "No selection to update case.";
+    return;
+  }
+  const statusMap = { BLOCK: "Resolved", SAFE: "Resolved", ESCALATE: "In Progress" };
+  const status = statusMap[action] || "Open";
+  actionsByAnchor[key] = { status, lastAction: action, ts: new Date().toISOString() };
+  if (caseActionStatus) caseActionStatus.textContent = `Action ${action} applied (demo only).`;
+  if (caseStatus) caseStatus.textContent = `Status: ${status}`;
+  renderNotes(key);
+}
+
+if (caseBlockBtn) caseBlockBtn.addEventListener("click", () => handleCaseAction("BLOCK"));
+if (caseSafeBtn) caseSafeBtn.addEventListener("click", () => handleCaseAction("SAFE"));
+if (caseEscalateBtn) caseEscalateBtn.addEventListener("click", () => handleCaseAction("ESCALATE"));
 
 if (loadDeviceBtn) {
   loadDeviceBtn.addEventListener("click", () => {
