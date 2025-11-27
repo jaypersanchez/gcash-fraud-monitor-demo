@@ -483,5 +483,20 @@ function renderNotes(key) {
   });
 }
 
+if (loadDeviceBtn) {
+  loadDeviceBtn.addEventListener("click", () => {
+    const devId = deviceSearch ? deviceSearch.value.trim() : "";
+    if (!devId) {
+      if (actionStatus) actionStatus.textContent = "Enter a device ID.";
+      return;
+    }
+    selectedDeviceId = devId;
+    selectedAccountId = null;
+    selectedRuleKey = "R2";
+    updateSelectionInfo();
+    loadGraphForSelected();
+  });
+}
+
 updateSelectionInfo();
 fetchAlerts();
