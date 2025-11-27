@@ -19,6 +19,7 @@ let alertsCache = [];
 let selectedAccountId = null;
 let selectedDeviceId = null;
 let lastParams = "";
+let selectedRuleKey = null;
 
 const severityClass = (severity) => {
   const map = {
@@ -62,7 +63,7 @@ async function fetchAlerts() {
     } else if (rule === "R2") {
       params.append("highRiskThreshold", getRiskThreshold());
       params.append("minRiskyAccounts", getMinRisky());
-    } else if (rule === "R3" || rule === "R7") {
+    } else if (rule === "R3" || rule === "R7" || rule === "ALL") {
       params.append("riskThreshold", getRiskThreshold());
       params.append("minRiskyAccounts", getMinRisky());
     }
@@ -72,18 +73,19 @@ async function fetchAlerts() {
     if (rule === "R2") endpoint = "/neo-alerts/r2";
     if (rule === "R3") endpoint = "/neo-alerts/r3";
     if (rule === "R7") endpoint = "/neo-alerts/r7";
+    if (rule === "ALL") endpoint = "/neo-alerts/search";
     const res = await fetch(`${API_BASE}${endpoint}?${params.toString()}`);
     const data = await res.json();
     renderAlerts(data);
     if (data && data.length) {
-      if (rule === "R1") {
-        selectedAccountId = data[0].accountId;
-        selectedDeviceId = null;
-      } else if (rule === "R2") {
-        selectedDeviceId = data[0].deviceId;
+      const first = data[0];
+      const anchorRule = first.ruleKey || rule;
+      selectedRuleKey = anchorRule;
+      if (anchorRule === "R2") {
+        selectedDeviceId = first.deviceId;
         selectedAccountId = null;
       } else {
-        selectedAccountId = data[0].accountId;
+        selectedAccountId = first.accountId;
         selectedDeviceId = null;
       }
       loadGraphForSelected();
@@ -113,18 +115,19 @@ function renderAlerts(alerts) {
       <td class="muted">${alert.created ? new Date(alert.created).toLocaleString() : ""}</td>
     `;
     row.addEventListener("click", () => {
-      if (getRule() === "R1") {
+      const rowRule = alert.ruleKey || getRule();
+      if (rowRule === "R1" || rowRule === "R3" || rowRule === "R7") {
         selectedAccountId = alert.accountId;
         selectedDeviceId = null;
-        if (neoStatus) neoStatus.textContent = `Selected account ${alert.accountId}`;
-      } else if (getRule() === "R2") {
+        if (neoStatus) neoStatus.textContent = `Selected account ${alert.accountId} (${rowRule})`;
+      } else if (rowRule === "R2") {
         selectedDeviceId = alert.deviceId;
         selectedAccountId = null;
-        if (neoStatus) neoStatus.textContent = `Selected device ${alert.deviceId}`;
+        if (neoStatus) neoStatus.textContent = `Selected device ${alert.deviceId} (${rowRule})`;
       } else {
         selectedAccountId = alert.accountId;
         selectedDeviceId = null;
-        if (neoStatus) neoStatus.textContent = `Selected account ${alert.accountId}`;
+        if (neoStatus) neoStatus.textContent = `Selected account ${alert.accountId} (${rowRule})`;
       }
       Array.from(alertsBody.children).forEach((tr) => tr.classList.remove("selected-row"));
       row.classList.add("selected-row");
