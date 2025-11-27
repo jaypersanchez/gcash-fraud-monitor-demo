@@ -303,6 +303,16 @@ function renderGraph(nodes, edges) {
     text.setAttribute("fill", "#0c1a36");
     text.textContent = n.label;
     g.appendChild(text);
+    g.addEventListener("click", () => {
+      if (n.type === "Account") {
+        selectedAccountId = n.id;
+        selectedDeviceId = null;
+        selectedRuleKey = selectedRuleKey || getRule();
+        if (neoStatus) neoStatus.textContent = `Selected account ${n.id} (drill-down)`;
+        updateSelectionInfo();
+        loadGraphForSelected();
+      }
+    });
     graphSvg.appendChild(g);
   };
 
