@@ -49,6 +49,24 @@ def fetch_account_alerts(tx, min_risk: float):
     return [record.data() for record in result]
 
 
+def fetch_account_alerts_r1(tx, min_risk: float, limit: int):
+    cypher = """
+    MATCH (a:Account)
+    WHERE a.is_fraud = true
+       OR a.is_fraud = "True"
+       OR a.risk_score >= $minRisk
+    RETURN
+      a.account_number AS accountId,
+      a.customer_name  AS customerName,
+      a.risk_score     AS riskScore,
+      a.is_fraud       AS isFraud
+    ORDER BY riskScore DESC
+    LIMIT $limit
+    """
+    result = tx.run(cypher, minRisk=min_risk, limit=limit)
+    return [record.data() for record in result]
+
+
 def create_app():
     load_dotenv()
     app = Flask(__name__)
@@ -90,6 +108,45 @@ def create_app():
                     "riskScore": risk,
                     "severity": severity,
                     "rule": "High risk score / flagged account",
+                    "summary": summary,
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+        return jsonify(alerts)
+
+    @app.route("/api/neo-alerts/r1", methods=["GET"])
+    def neo4j_account_alerts_r1():
+        if not driver:
+            return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
+        try:
+            risk_threshold = float(request.args.get("riskThreshold", 0.8))
+        except Exception:
+            risk_threshold = 0.8
+        try:
+            limit = int(request.args.get("limit", 50))
+        except Exception:
+            limit = 50
+        with driver.session() as session:
+            records = session.execute_read(fetch_account_alerts_r1, risk_threshold, limit)
+        alerts = []
+        for idx, rec in enumerate(records, start=1):
+            risk = rec.get("riskScore") or 0
+            if risk >= 0.95:
+                severity = "Critical"
+            elif risk >= 0.9:
+                severity = "High"
+            else:
+                severity = "Medium"
+            summary = f"{rec.get('customerName')} ({rec.get('accountId')}) risk={risk:.2f} is_fraud={rec.get('isFraud')}"
+            alerts.append(
+                {
+                    "id": idx,
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "riskScore": risk,
+                    "severity": severity,
+                    "rule": "R1 – High risk / flagged account",
                     "summary": summary,
                     "status": "Open",
                     "created": datetime.utcnow().isoformat() + "Z",

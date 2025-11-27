@@ -9,9 +9,13 @@ const neoTestButton = document.getElementById("neo-test");
 const neoStatus = document.getElementById("neo-status");
 const graphSvg = document.getElementById("graph-svg");
 const loadGraphBtn = document.getElementById("load-graph");
+const riskSlider = document.getElementById("riskThreshold");
+const limitInput = document.getElementById("limitInput");
+const riskValue = document.getElementById("riskValue");
 
 let alertsCache = [];
 let selectedAccountId = null;
+let lastParams = "";
 
 const severityClass = (severity) => {
   const map = {
@@ -29,7 +33,11 @@ const severityClass = (severity) => {
 async function fetchAlerts() {
   setLoadingState(true);
   try {
-    const res = await fetch(`${API_BASE}/neo-alerts`);
+    const params = new URLSearchParams();
+    params.append("riskThreshold", getRiskThreshold());
+    params.append("limit", getLimit());
+    lastParams = params.toString();
+    const res = await fetch(`${API_BASE}/neo-alerts/r1?${params.toString()}`);
     const data = await res.json();
     renderAlerts(data);
     if (data && data.length) {
@@ -120,7 +128,8 @@ async function loadGraphForTopAlert() {
     if (neoStatus) neoStatus.textContent = "No accountId found on alert.";
     return;
   }
-  neoStatus.textContent = `Loading graph for ${accountId}...`;
+  const paramsDisplay = lastParams ? ` (filters: ${lastParams})` : "";
+  neoStatus.textContent = `Loading graph for ${accountId}${paramsDisplay}...`;
   try {
     const res = await fetch(`${API_BASE}/neo4j/graph/account/${encodeURIComponent(accountId)}`);
     const data = await res.json();
@@ -220,6 +229,30 @@ function renderGraph(nodes, edges) {
 
 if (loadGraphBtn) {
   loadGraphBtn.addEventListener("click", loadGraphForTopAlert);
+}
+
+function getRiskThreshold() {
+  if (riskSlider) return parseFloat(riskSlider.value) || 0.8;
+  return 0.8;
+}
+
+function getLimit() {
+  if (limitInput) return parseInt(limitInput.value || "50", 10);
+  return 50;
+}
+
+if (riskSlider && riskValue) {
+  riskSlider.addEventListener("input", () => {
+    riskValue.textContent = Number(riskSlider.value).toFixed(2);
+  });
+}
+
+if (limitInput) {
+  limitInput.addEventListener("change", () => {
+    if (limitInput.value === "" || Number(limitInput.value) < 1) {
+      limitInput.value = "50";
+    }
+  });
 }
 
 fetchAlerts();
