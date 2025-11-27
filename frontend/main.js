@@ -14,6 +14,10 @@ const limitInput = document.getElementById("limitInput");
 const riskValue = document.getElementById("riskValue");
 const ruleSelect = document.getElementById("ruleSelect");
 const minRiskyInput = document.getElementById("minRisky");
+const selectionInfo = document.getElementById("selection-info");
+const flagAccountBtn = document.getElementById("flag-account");
+const flagDeviceBtn = document.getElementById("flag-device");
+const actionStatus = document.getElementById("action-status");
 
 let alertsCache = [];
 let selectedAccountId = null;
@@ -129,8 +133,10 @@ function renderAlerts(alerts) {
         selectedDeviceId = null;
         if (neoStatus) neoStatus.textContent = `Selected account ${alert.accountId} (${rowRule})`;
       }
+      selectedRuleKey = rowRule;
       Array.from(alertsBody.children).forEach((tr) => tr.classList.remove("selected-row"));
       row.classList.add("selected-row");
+      updateSelectionInfo();
       loadGraphForSelected();
     });
     alertsBody.appendChild(row);
@@ -191,7 +197,8 @@ async function loadGraphForSelected() {
     return;
   }
   const paramsDisplay = lastParams ? ` (filters: ${lastParams})` : "";
-  neoStatus.textContent = `Loading graph for ${anchor}${paramsDisplay}...`;
+  const ruleLabel = selectedRuleKey || rule;
+  neoStatus.textContent = `Loading graph for ${anchor} (${ruleLabel})${paramsDisplay}...`;
   try {
     const endpoint = rule === "R2" ? "/neo4j/graph/device/" : "/neo4j/graph/account/";
     const res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
@@ -200,7 +207,7 @@ async function loadGraphForSelected() {
       neoStatus.textContent = data.message || "Graph load failed.";
       return;
     }
-    neoStatus.textContent = `Graph loaded for ${anchor}.`;
+    neoStatus.textContent = `Graph loaded for ${anchor} (${ruleLabel}).`;
     renderGraph(data.nodes || [], data.edges || []);
   } catch (err) {
     neoStatus.textContent = "Graph load failed.";
@@ -320,8 +327,56 @@ if (ruleSelect) {
   ruleSelect.addEventListener("change", () => {
     selectedAccountId = null;
     selectedDeviceId = null;
+    selectedRuleKey = null;
     fetchAlerts();
   });
 }
 
+function updateSelectionInfo() {
+  const ruleLabel = selectedRuleKey || getRule();
+  const anchor = ruleLabel === "R2" ? selectedDeviceId : selectedAccountId;
+  if (selectionInfo) {
+    selectionInfo.textContent = anchor ? `Selected ${anchor} (${ruleLabel})` : "No selection yet.";
+  }
+}
+
+async function flagAnchor() {
+  const ruleLabel = selectedRuleKey || getRule();
+  let endpoint = null;
+  let anchor = null;
+  if (ruleLabel === "R2") {
+    anchor = selectedDeviceId;
+    endpoint = anchor ? `/neo4j/flag/device/${encodeURIComponent(anchor)}` : null;
+  } else {
+    anchor = selectedAccountId;
+    endpoint = anchor ? `/neo4j/flag/account/${encodeURIComponent(anchor)}` : null;
+  }
+  if (!endpoint) {
+    if (actionStatus) actionStatus.textContent = "No selection to flag.";
+    return;
+  }
+  actionStatus.textContent = "Flagging...";
+  try {
+    const res = await fetch(`${API_BASE}${endpoint}`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) {
+      actionStatus.textContent = data.message || "Flag failed.";
+      return;
+    }
+    actionStatus.textContent = `Flagged ${anchor}. Refreshing alerts...`;
+    await fetchAlerts();
+  } catch (err) {
+    actionStatus.textContent = "Flag failed.";
+    console.error(err);
+  }
+}
+
+if (flagAccountBtn) {
+  flagAccountBtn.addEventListener("click", flagAnchor);
+}
+if (flagDeviceBtn) {
+  flagDeviceBtn.addEventListener("click", flagAnchor);
+}
+
+updateSelectionInfo();
 fetchAlerts();

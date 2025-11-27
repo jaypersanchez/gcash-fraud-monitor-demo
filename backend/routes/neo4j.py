@@ -14,6 +14,36 @@ def neo4j_health():
         return jsonify({"status": "error", "message": str(exc)}), 500
 
 
+@neo4j_bp.route("/neo4j/flag/account/<account_id>", methods=["POST"])
+def neo4j_flag_account(account_id: str):
+    cypher = """
+    MATCH (a:Account {account_number: $accountId})
+    SET a.is_fraud = true, a.flagged_at = datetime()
+    RETURN a.account_number AS accountId
+    """
+    with get_driver() as driver:
+        with driver.session() as session:
+            rec = session.run(cypher, accountId=account_id).single()
+            if not rec:
+                return jsonify({"status": "error", "message": "Account not found"}), 404
+    return jsonify({"status": "ok", "accountId": account_id})
+
+
+@neo4j_bp.route("/neo4j/flag/device/<device_id>", methods=["POST"])
+def neo4j_flag_device(device_id: str):
+    cypher = """
+    MATCH (d:Device {device_id: $deviceId})
+    SET d.flagged = true, d.flagged_at = datetime()
+    RETURN d.device_id AS deviceId
+    """
+    with get_driver() as driver:
+        with driver.session() as session:
+            rec = session.run(cypher, deviceId=device_id).single()
+            if not rec:
+                return jsonify({"status": "error", "message": "Device not found"}), 404
+    return jsonify({"status": "ok", "deviceId": device_id})
+
+
 @neo4j_bp.route("/neo4j/graph/account/<account_id>", methods=["GET"])
 def neo4j_graph_account(account_id: str):
     cypher = """
