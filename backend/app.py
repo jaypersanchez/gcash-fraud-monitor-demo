@@ -21,6 +21,7 @@ from backend.routes.alerts import alerts_bp
 from backend.routes.cases import cases_bp
 from backend.routes.rules import rules_bp
 from backend.routes.neo4j import neo4j_bp
+from backend.routes.investigator import investigator_bp
 
 # Neo4j driver (global)
 NEO4J_URI = os.getenv("NEO4J_URI")
@@ -154,6 +155,7 @@ def create_app():
     app.register_blueprint(cases_bp, url_prefix="/api")
     app.register_blueprint(rules_bp, url_prefix="/api")
     app.register_blueprint(neo4j_bp, url_prefix="/api")
+    app.register_blueprint(investigator_bp, url_prefix="/api")
 
     @app.route("/api/health", methods=["GET"])
     def health():

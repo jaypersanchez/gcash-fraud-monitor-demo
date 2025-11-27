@@ -415,7 +415,7 @@ if (flagDeviceBtn) {
 }
 
 if (addNoteBtn) {
-  addNoteBtn.addEventListener("click", () => {
+  addNoteBtn.addEventListener("click", async () => {
     const anchor = (selectedRuleKey === "R2" ? selectedDeviceId : selectedAccountId) || (selectedAlert && (selectedAlert.deviceId || selectedAlert.accountId));
     if (!anchor) {
       if (actionStatus) actionStatus.textContent = "No selection to add note.";
@@ -424,11 +424,31 @@ if (addNoteBtn) {
     const note = (noteInput && noteInput.value.trim()) || "";
     if (!note) return;
     const key = `${selectedRuleKey || getRule()}:${anchor}`;
-    if (!notesByAnchor[key]) notesByAnchor[key] = [];
-    notesByAnchor[key].push({ text: note, ts: new Date().toISOString() });
-    noteInput.value = "";
-    renderNotes(key);
-    if (actionStatus) actionStatus.textContent = "Note added (session only).";
+    try {
+      const res = await fetch(`${API_BASE}/investigator/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          anchor_id: anchor,
+          anchor_type: (selectedRuleKey || getRule()) === "R2" ? "DEVICE" : "ACCOUNT",
+          rule_key: selectedRuleKey || getRule(),
+          note,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (actionStatus) actionStatus.textContent = data.message || "Note failed.";
+        return;
+      }
+      if (!notesByAnchor[key]) notesByAnchor[key] = [];
+      notesByAnchor[key].push({ text: note, ts: data.created_at || new Date().toISOString() });
+      noteInput.value = "";
+      renderNotes(key);
+      if (actionStatus) actionStatus.textContent = "Note saved.";
+    } catch (err) {
+      if (actionStatus) actionStatus.textContent = "Note failed.";
+      console.error(err);
+    }
   });
 }
 
@@ -497,7 +517,7 @@ function renderNotes(key) {
   });
 }
 
-function handleCaseAction(action) {
+async function handleCaseAction(action) {
   const key = currentAnchorKey();
   if (!key) {
     if (caseActionStatus) caseActionStatus.textContent = "No selection to update case.";
@@ -505,10 +525,32 @@ function handleCaseAction(action) {
   }
   const statusMap = { BLOCK: "Resolved", SAFE: "Resolved", ESCALATE: "In Progress" };
   const status = statusMap[action] || "Open";
-  actionsByAnchor[key] = { status, lastAction: action, ts: new Date().toISOString() };
-  if (caseActionStatus) caseActionStatus.textContent = `Action ${action} applied (demo only).`;
-  if (caseStatus) caseStatus.textContent = `Status: ${status}`;
-  renderNotes(key);
+  const [ruleLabel, anchor] = key.split(":");
+  try {
+    const res = await fetch(`${API_BASE}/investigator/actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        anchor_id: anchor,
+        anchor_type: ruleLabel === "R2" ? "DEVICE" : "ACCOUNT",
+        rule_key: ruleLabel,
+        action,
+        status,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (caseActionStatus) caseActionStatus.textContent = data.message || "Case action failed.";
+      return;
+    }
+    actionsByAnchor[key] = { status, lastAction: action, ts: data.created_at || new Date().toISOString() };
+    if (caseActionStatus) caseActionStatus.textContent = `Action ${action} saved.`;
+    if (caseStatus) caseStatus.textContent = `Status: ${status}`;
+    renderNotes(key);
+  } catch (err) {
+    if (caseActionStatus) caseActionStatus.textContent = "Case action failed.";
+    console.error(err);
+  }
 }
 
 if (caseBlockBtn) caseBlockBtn.addEventListener("click", () => handleCaseAction("BLOCK"));
