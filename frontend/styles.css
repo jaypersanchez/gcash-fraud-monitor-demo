@@ -134,6 +134,10 @@ a {
   cursor: pointer;
 }
 
+.selected-row {
+  background: #eef3ff !important;
+}
+
 .btn {
   border: none;
   background: var(--primary);

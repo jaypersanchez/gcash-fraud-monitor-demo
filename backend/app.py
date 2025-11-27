@@ -67,6 +67,33 @@ def fetch_account_alerts_r1(tx, min_risk: float, limit: int):
     return [record.data() for record in result]
 
 
+def fetch_device_alerts_r2(tx, high_risk: float, min_risky: int, limit: int):
+    cypher = """
+    MATCH (d:Device)<-[:USES]-(a:Account)
+    WITH d,
+         collect(DISTINCT a) AS accounts,
+         count(DISTINCT CASE
+           WHEN a.is_fraud = true OR a.is_fraud = "True"
+             OR a.risk_score >= $highRiskThreshold
+           THEN a END) AS riskyAccountCount
+    WHERE riskyAccountCount >= $minRiskyAccounts
+    RETURN
+      d.device_id       AS deviceId,
+      d.device_type     AS deviceType,
+      size(accounts)    AS totalAccounts,
+      riskyAccountCount AS riskyAccounts
+    ORDER BY riskyAccounts DESC, totalAccounts DESC
+    LIMIT $limit
+    """
+    result = tx.run(
+        cypher,
+        highRiskThreshold=high_risk,
+        minRiskyAccounts=min_risky,
+        limit=limit,
+    )
+    return [record.data() for record in result]
+
+
 def create_app():
     load_dotenv()
     app = Flask(__name__)
@@ -147,6 +174,47 @@ def create_app():
                     "riskScore": risk,
                     "severity": severity,
                     "rule": "R1 – High risk / flagged account",
+                    "summary": summary,
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+        return jsonify(alerts)
+
+    @app.route("/api/neo-alerts/r2", methods=["GET"])
+    def neo4j_device_alerts_r2():
+        if not driver:
+            return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
+        try:
+            high_risk = float(request.args.get("highRiskThreshold", 0.8))
+        except Exception:
+            high_risk = 0.8
+        try:
+            min_risky = int(request.args.get("minRiskyAccounts", 2))
+        except Exception:
+            min_risky = 2
+        try:
+            limit = int(request.args.get("limit", 20))
+        except Exception:
+            limit = 20
+        with driver.session() as session:
+            records = session.execute_read(fetch_device_alerts_r2, high_risk, min_risky, limit)
+
+        alerts = []
+        for idx, rec in enumerate(records, start=1):
+            risky = rec.get("riskyAccounts") or 0
+            total = rec.get("totalAccounts") or 0
+            severity = "High" if risky >= 3 else "Medium"
+            summary = f"Device {rec.get('deviceId')} used by {risky} risky / {total} total accounts"
+            alerts.append(
+                {
+                    "id": idx,
+                    "deviceId": rec.get("deviceId"),
+                    "deviceType": rec.get("deviceType"),
+                    "riskyAccounts": risky,
+                    "totalAccounts": total,
+                    "severity": severity,
+                    "rule": "R2 – Shared risky device",
                     "summary": summary,
                     "status": "Open",
                     "created": datetime.utcnow().isoformat() + "Z",

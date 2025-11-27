@@ -54,13 +54,24 @@
             <div class="flex-between">
               <div>
                 <h2 style="margin: 0">Alerts</h2>
-                <span class="muted">Sorted by severity and time</span>
+                <span class="muted">Choose a rule and adjust thresholds</span>
               </div>
               <div class="grid-two" style="gap: 8px;">
                 <div class="card" style="padding:8px 12px; background:#f8fbff; border:1px solid #e1e9f5;">
-                  <div style="font-size:12px; color:#627089;">Risk threshold</div>
+                  <div style="font-size:12px; color:#627089;">Rule</div>
+                  <select id="ruleSelect" style="width:180px; padding:6px; border-radius:8px; border:1px solid #e1e9f5;">
+                    <option value="R1">R1 – High risk / flagged accounts</option>
+                    <option value="R2">R2 – Shared risky devices</option>
+                  </select>
+                </div>
+                <div class="card" style="padding:8px 12px; background:#f8fbff; border:1px solid #e1e9f5;">
+                  <div style="font-size:12px; color:#627089;">Risk threshold / High risk threshold</div>
                   <input id="riskThreshold" type="range" min="0.0" max="1.0" step="0.01" value="0.80" style="width:160px;" />
                   <span id="riskValue" style="font-size:12px; color:#0c1a36;">0.80</span>
+                </div>
+                <div class="card" style="padding:8px 12px; background:#f8fbff; border:1px solid #e1e9f5;">
+                  <div style="font-size:12px; color:#627089;">Min risky accounts (R2)</div>
+                  <input id="minRisky" type="number" min="1" value="2" style="width:80px;" />
                 </div>
                 <div class="card" style="padding:8px 12px; background:#f8fbff; border:1px solid #e1e9f5;">
                   <div style="font-size:12px; color:#627089;">Limit</div>

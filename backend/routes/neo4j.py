@@ -88,3 +88,62 @@ def _edge_label(tx):
     if tags:
         parts.append(str(tags))
     return " / ".join(parts)
+
+
+@neo4j_bp.route("/neo4j/graph/device/<device_id>", methods=["GET"])
+def neo4j_graph_device(device_id: str):
+    cypher = """
+    MATCH (d:Device {device_id: $deviceId})
+    OPTIONAL MATCH (d)<-[:USES]-(a:Account)
+    OPTIONAL MATCH (a)-[:PERFORMS]->(txOut:Transaction)-[:TO]->(dst:Account)
+    OPTIONAL MATCH (src:Account)-[:PERFORMS]->(txIn:Transaction)-[:TO]->(a)
+    RETURN d,
+           collect(DISTINCT a) AS accounts,
+           collect(DISTINCT {tx: txOut, other: dst, direction: 'OUT'}) AS outbound,
+           collect(DISTINCT {tx: txIn, other: src, direction: 'IN'}) AS inbound
+    """
+    with get_driver() as driver:
+        with driver.session() as session:
+            record = session.run(cypher, deviceId=device_id).single()
+            if not record:
+                return jsonify({"status": "error", "message": "Device not found"}), 404
+
+            nodes = {}
+            edges = []
+
+            def add_node(key, label, ntype, extra=None):
+                if key in nodes:
+                    return
+                node = {"id": key, "label": label, "type": ntype}
+                if extra:
+                    node.update(extra)
+                nodes[key] = node
+
+            d = record["d"]
+            add_node(d["device_id"], d["device_id"], "Device", {"deviceType": d.get("device_type"), "isSubject": True})
+
+            for acc in record["accounts"] or []:
+                add_node(acc["account_number"], acc["account_number"], "Account", {"customerName": acc.get("customer_name")})
+                edges.append({"source": acc["account_number"], "target": d["device_id"], "type": "USES"})
+
+            def handle_tx(items):
+                for item in items or []:
+                    tx = item.get("tx")
+                    other = item.get("other")
+                    direction = item.get("direction")
+                    if not tx or not other:
+                        continue
+                    tx_ref = tx["tx_ref"]
+                    add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
+                    add_node(other["account_number"], other["account_number"], "Account", {"customerName": other.get("customer_name")})
+                    if direction == "OUT":
+                        edges.append({"source": other["account_number"], "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                        edges.append({"source": tx_ref, "target": other["account_number"], "type": "TO"})
+                    else:
+                        edges.append({"source": other["account_number"], "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                        edges.append({"source": tx_ref, "target": d["device_id"], "type": "TO"})
+
+            handle_tx(record.get("outbound"))
+            handle_tx(record.get("inbound"))
+
+    return jsonify({"status": "ok", "nodes": list(nodes.values()), "edges": edges})
