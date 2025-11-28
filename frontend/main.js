@@ -145,7 +145,7 @@ function renderAlerts(alerts) {
       } else if (rowRule === "R2") {
         selectedDeviceId = alert.deviceId;
         selectedAccountId = null;
-        if (neoStatus) neoStatus.textContent = `Selected device ${alert.deviceId} (${rowRule})`;
+        if (neoStatus) neoStatus.textContent = `Selected identifier ${alert.deviceId} (${rowRule})`;
       } else {
         selectedAccountId = alert.accountId;
         selectedDeviceId = null;
@@ -209,18 +209,18 @@ if (neoTestButton) {
 
 async function loadGraphForSelected() {
   const rule = getRule();
+  const ruleLabel = selectedRuleKey || rule;
   const accountId = selectedAccountId || (alertsCache[0] && alertsCache[0].accountId);
   const deviceId = selectedDeviceId || (alertsCache[0] && alertsCache[0].deviceId);
-  const anchor = rule === "R2" ? deviceId : accountId;
+  const anchor = ruleLabel === "R2" ? deviceId : accountId;
   if (!anchor) {
     if (neoStatus) neoStatus.textContent = "No anchor found on alert.";
     return;
   }
   const paramsDisplay = lastParams ? ` (filters: ${lastParams})` : "";
-  const ruleLabel = selectedRuleKey || rule;
   neoStatus.textContent = `Loading graph for ${anchor} (${ruleLabel})${paramsDisplay}...`;
   try {
-    const endpoint = rule === "R2" ? "/neo4j/graph/device/" : "/neo4j/graph/account/";
+    const endpoint = ruleLabel === "R2" ? "/neo4j/graph/identifier/" : "/neo4j/graph/account/";
     const res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
     const data = await res.json();
     if (!res.ok) {
@@ -365,7 +365,8 @@ function updateSelectionInfo() {
   const ruleLabel = selectedRuleKey || getRule();
   const anchor = ruleLabel === "R2" ? selectedDeviceId : selectedAccountId;
   if (selectionInfo) {
-    selectionInfo.textContent = anchor ? `Selected ${anchor} (${ruleLabel})` : "No selection yet.";
+    const noun = ruleLabel === "R2" ? "identifier" : "account";
+    selectionInfo.textContent = anchor ? `Selected ${noun} ${anchor} (${ruleLabel})` : "No selection yet.";
   }
   renderContext();
 }

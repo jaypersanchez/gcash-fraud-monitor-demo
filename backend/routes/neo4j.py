@@ -17,9 +17,12 @@ def neo4j_health():
 @neo4j_bp.route("/neo4j/flag/account/<account_id>", methods=["POST"])
 def neo4j_flag_account(account_id: str):
     cypher = """
-    MATCH (a:Account {account_number: $accountId})
+    MATCH (a)
+    WHERE (a:Account AND a.account_number = $accountId)
+       OR (a:Mule AND a.id = $accountId)
+       OR (a:Client AND a.id = $accountId)
     SET a.is_fraud = true, a.flagged_at = datetime()
-    RETURN a.account_number AS accountId
+    RETURN coalesce(a.account_number, a.id) AS accountId
     """
     with get_driver() as driver:
         with driver.session() as session:
@@ -32,9 +35,19 @@ def neo4j_flag_account(account_id: str):
 @neo4j_bp.route("/neo4j/flag/device/<device_id>", methods=["POST"])
 def neo4j_flag_device(device_id: str):
     cypher = """
-    MATCH (d:Device {device_id: $deviceId})
+    MATCH (d)
+    WHERE (d:Device AND d.device_id = $deviceId)
+       OR (d:Email AND d.email = $deviceId)
+       OR (d:Phone AND d.phoneNumber = $deviceId)
+       OR (d:SSN AND d.ssn = $deviceId)
     SET d.flagged = true, d.flagged_at = datetime()
-    RETURN d.device_id AS deviceId
+    RETURN
+      CASE
+        WHEN d.device_id IS NOT NULL THEN d.device_id
+        WHEN d.email IS NOT NULL THEN d.email
+        WHEN d.phoneNumber IS NOT NULL THEN d.phoneNumber
+        ELSE d.ssn
+      END AS deviceId
     """
     with get_driver() as driver:
         with driver.session() as session:
@@ -47,14 +60,16 @@ def neo4j_flag_device(device_id: str):
 @neo4j_bp.route("/neo4j/graph/account/<account_id>", methods=["GET"])
 def neo4j_graph_account(account_id: str):
     cypher = """
-    MATCH (a:Account {account_number: $accountId})
-    OPTIONAL MATCH (a)-[:USES]->(d:Device)
-    OPTIONAL MATCH (d)<-[:USES]-(devAcc:Account)
-    OPTIONAL MATCH (a)-[:PERFORMS]->(txOut:Transaction)-[:TO]->(dst:Account)
-    OPTIONAL MATCH (src:Account)-[:PERFORMS]->(txIn:Transaction)-[:TO]->(a)
+    MATCH (a)
+    WHERE (a:Account AND a.account_number = $accountId)
+       OR (a:Mule AND a.id = $accountId)
+       OR (a:Client AND a.id = $accountId)
+    OPTIONAL MATCH (a)-[r:HAS_EMAIL|HAS_PHONE|HAS_SSN]->(id)<-[r2:HAS_EMAIL|HAS_PHONE|HAS_SSN]-(peer)
+    OPTIONAL MATCH (a)-[:PERFORMED]->(txOut:Transaction)-[:TO]->(dst)
+    OPTIONAL MATCH (src)-[:PERFORMED]->(txIn:Transaction)-[:TO]->(a)
     RETURN a,
-           collect(DISTINCT d) AS devices,
-           collect(DISTINCT devAcc) AS device_accounts,
+           collect(DISTINCT id) AS identifiers,
+           collect(DISTINCT {idNode: id, peer: peer}) AS idPeers,
            collect(DISTINCT {tx: txOut, other: dst, direction: 'OUT'}) AS outbound,
            collect(DISTINCT {tx: txIn, other: src, direction: 'IN'}) AS inbound
     """
@@ -76,15 +91,37 @@ def neo4j_graph_account(account_id: str):
                 nodes[key] = node
 
             a = record["a"]
-            add_node(a["account_number"], a["account_number"], "Account", {"customerName": a.get("customer_name"), "isSubject": True})
+            anchor_id = a.get("account_number") or a.get("id")
+            anchor_label = a.get("customer_name") or a.get("name") or anchor_id
+            add_node(anchor_id, anchor_label, "Account", {"customerName": anchor_label, "isSubject": True})
 
-            for dev in record["devices"] or []:
-                add_node(dev["device_id"], dev["device_id"], "Device", {"deviceType": dev.get("device_type")})
-                edges.append({"source": a["account_number"], "target": dev["device_id"], "type": "USES"})
+            identifiers = record.get("identifiers") or []
+            for id_node in identifiers:
+                device_id = id_node.get("device_id") or id_node.get("email") or id_node.get("phoneNumber") or id_node.get("ssn")
+                if not device_id:
+                    continue
+                dev_type = "Device"
+                if "email" in id_node:
+                    dev_type = "Email"
+                elif "phoneNumber" in id_node:
+                    dev_type = "Phone"
+                elif "ssn" in id_node:
+                    dev_type = "SSN"
+                add_node(device_id, device_id, "Device", {"deviceType": dev_type})
+                edges.append({"source": anchor_id, "target": device_id, "type": "HAS_IDENTIFIER"})
 
-            for acc in record["device_accounts"] or []:
-                add_node(acc["account_number"], acc["account_number"], "Account", {"customerName": acc.get("customer_name")})
-                edges.append({"source": acc["account_number"], "target": a["account_number"], "type": "SHARES_DEVICE"})
+            id_peers = record.get("idPeers") or []
+            for entry in id_peers:
+                id_node = entry.get("idNode") or {}
+                peer = entry.get("peer") or {}
+                device_id = id_node.get("device_id") or id_node.get("email") or id_node.get("phoneNumber") or id_node.get("ssn")
+                peer_id = peer.get("account_number") or peer.get("id")
+                if not device_id or not peer_id:
+                    continue
+                peer_label = peer.get("customer_name") or peer.get("name") or peer_id
+                add_node(peer_id, peer_label, "Account", {"customerName": peer_label})
+                add_node(device_id, device_id, "Device", {"deviceType": "Identifier"})
+                edges.append({"source": peer_id, "target": device_id, "type": "HAS_IDENTIFIER"})
 
             def handle_tx(items):
                 for item in items or []:
@@ -93,15 +130,17 @@ def neo4j_graph_account(account_id: str):
                     direction = item.get("direction")
                     if not tx or not other:
                         continue
-                    tx_ref = tx["tx_ref"]
+                    tx_ref = tx.get("tx_ref") or tx.get("id")
                     add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
-                    add_node(other["account_number"], other["account_number"], "Account", {"customerName": other.get("customer_name")})
+                    other_id = other.get("account_number") or other.get("id")
+                    other_label = other.get("customer_name") or other.get("name") or other_id
+                    add_node(other_id, other_label, "Account", {"customerName": other_label})
                     if direction == "OUT":
-                        edges.append({"source": a["account_number"], "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
-                        edges.append({"source": tx_ref, "target": other["account_number"], "type": "TO"})
+                        edges.append({"source": anchor_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                        edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
                     else:
-                        edges.append({"source": other["account_number"], "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
-                        edges.append({"source": tx_ref, "target": a["account_number"], "type": "TO"})
+                        edges.append({"source": other_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                        edges.append({"source": tx_ref, "target": anchor_id, "type": "TO"})
 
             handle_tx(record.get("outbound"))
             handle_tx(record.get("inbound"))
@@ -123,14 +162,18 @@ def _edge_label(tx):
 @neo4j_bp.route("/neo4j/graph/device/<device_id>", methods=["GET"])
 def neo4j_graph_device(device_id: str):
     cypher = """
-    MATCH (d:Device {device_id: $deviceId})
-    OPTIONAL MATCH (d)<-[:USES]-(a:Account)
-    OPTIONAL MATCH (a)-[:PERFORMS]->(txOut:Transaction)-[:TO]->(dst:Account)
-    OPTIONAL MATCH (src:Account)-[:PERFORMS]->(txIn:Transaction)-[:TO]->(a)
-    RETURN d,
+    MATCH (id)
+    WHERE (id:Device AND id.device_id = $deviceId)
+       OR (id:Email AND id.email = $deviceId)
+       OR (id:Phone AND id.phoneNumber = $deviceId)
+       OR (id:SSN AND id.ssn = $deviceId)
+    OPTIONAL MATCH (id)<-[:HAS_EMAIL|HAS_PHONE|HAS_SSN]-(a)
+    OPTIONAL MATCH (a)-[:PERFORMED]->(txOut:Transaction)-[:TO]->(dst)
+    OPTIONAL MATCH (src)-[:PERFORMED]->(txIn:Transaction)-[:TO]->(a)
+    RETURN id,
            collect(DISTINCT a) AS accounts,
-           collect(DISTINCT {tx: txOut, other: dst, direction: 'OUT'}) AS outbound,
-           collect(DISTINCT {tx: txIn, other: src, direction: 'IN'}) AS inbound
+           collect(DISTINCT {tx: txOut, other: dst, direction: 'OUT', acc: a}) AS outbound,
+           collect(DISTINCT {tx: txIn, other: src, direction: 'IN', acc: a}) AS inbound
     """
     with get_driver() as driver:
         with driver.session() as session:
@@ -149,29 +192,123 @@ def neo4j_graph_device(device_id: str):
                     node.update(extra)
                 nodes[key] = node
 
-            d = record["d"]
-            add_node(d["device_id"], d["device_id"], "Device", {"deviceType": d.get("device_type"), "isSubject": True})
+            d = record["id"]
+            device_id_val = d.get("device_id") or d.get("email") or d.get("phoneNumber") or d.get("ssn")
+            device_type = "Device"
+            if "email" in d:
+                device_type = "Email"
+            elif "phoneNumber" in d:
+                device_type = "Phone"
+            elif "ssn" in d:
+                device_type = "SSN"
+            add_node(device_id_val, device_id_val, "Device", {"deviceType": device_type, "isSubject": True})
 
             for acc in record["accounts"] or []:
-                add_node(acc["account_number"], acc["account_number"], "Account", {"customerName": acc.get("customer_name")})
-                edges.append({"source": acc["account_number"], "target": d["device_id"], "type": "USES"})
+                acc_id = acc.get("account_number") or acc.get("id")
+                acc_label = acc.get("customer_name") or acc.get("name") or acc_id
+                add_node(acc_id, acc_label, "Account", {"customerName": acc_label})
+                edges.append({"source": acc_id, "target": device_id_val, "type": "HAS_IDENTIFIER"})
 
             def handle_tx(items):
                 for item in items or []:
                     tx = item.get("tx")
                     other = item.get("other")
+                    acc = item.get("acc")
                     direction = item.get("direction")
-                    if not tx or not other:
+                    if not tx or not other or not acc:
                         continue
-                    tx_ref = tx["tx_ref"]
+                    tx_ref = tx.get("tx_ref") or tx.get("id")
                     add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
-                    add_node(other["account_number"], other["account_number"], "Account", {"customerName": other.get("customer_name")})
+                    other_id = other.get("account_number") or other.get("id")
+                    other_label = other.get("customer_name") or other.get("name") or other_id
+                    acc_id = acc.get("account_number") or acc.get("id")
+                    acc_label = acc.get("customer_name") or acc.get("name") or acc_id
+                    add_node(other_id, other_label, "Account", {"customerName": other_label})
+                    add_node(acc_id, acc_label, "Account", {"customerName": acc_label})
                     if direction == "OUT":
-                        edges.append({"source": other["account_number"], "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
-                        edges.append({"source": tx_ref, "target": other["account_number"], "type": "TO"})
+                        edges.append({"source": acc_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                        edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
                     else:
-                        edges.append({"source": other["account_number"], "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
-                        edges.append({"source": tx_ref, "target": d["device_id"], "type": "TO"})
+                        edges.append({"source": other_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                        edges.append({"source": tx_ref, "target": acc_id, "type": "TO"})
+
+            handle_tx(record.get("outbound"))
+            handle_tx(record.get("inbound"))
+
+    return jsonify({"status": "ok", "nodes": list(nodes.values()), "edges": edges})
+
+
+@neo4j_bp.route("/neo4j/graph/identifier/<identifier>", methods=["GET"])
+def neo4j_graph_identifier(identifier: str):
+    cypher = """
+    MATCH (id)
+    WHERE (id:Email AND id.email = $identifier)
+       OR (id:Phone AND id.phoneNumber = $identifier)
+       OR (id:SSN AND id.ssn = $identifier)
+    OPTIONAL MATCH (id)<-[:HAS_EMAIL|HAS_PHONE|HAS_SSN]-(acc)
+    OPTIONAL MATCH (acc)-[:PERFORMED]->(txOut:Transaction)-[:TO]->(dst)
+    OPTIONAL MATCH (src)-[:PERFORMED]->(txIn:Transaction)-[:TO]->(acc)
+    RETURN id,
+           collect(DISTINCT acc) AS accounts,
+           collect(DISTINCT {tx: txOut, other: dst, direction: 'OUT', acc: acc}) AS outbound,
+           collect(DISTINCT {tx: txIn, other: src, direction: 'IN', acc: acc}) AS inbound
+    """
+    with get_driver() as driver:
+        with driver.session() as session:
+            record = session.run(cypher, identifier=identifier).single()
+            if not record:
+                return jsonify({"status": "error", "message": "Identifier not found"}), 404
+
+            nodes = {}
+            edges = []
+
+            def add_node(key, label, ntype, extra=None):
+                if key in nodes:
+                    return
+                node = {"id": key, "label": label, "type": ntype}
+                if extra:
+                    node.update(extra)
+                nodes[key] = node
+
+            id_node = record["id"]
+            device_id_val = id_node.get("device_id") or id_node.get("email") or id_node.get("phoneNumber") or id_node.get("ssn")
+            device_type = "Device"
+            if "email" in id_node:
+                device_type = "Email"
+            elif "phoneNumber" in id_node:
+                device_type = "Phone"
+            elif "ssn" in id_node:
+                device_type = "SSN"
+            add_node(device_id_val, device_id_val, "Device", {"deviceType": device_type, "isSubject": True})
+
+            for acc in record.get("accounts") or []:
+                acc_id = acc.get("account_number") or acc.get("id")
+                acc_label = acc.get("customer_name") or acc.get("name") or acc_id
+                add_node(acc_id, acc_label, "Account", {"customerName": acc_label})
+                edges.append({"source": acc_id, "target": device_id_val, "type": "HAS_IDENTIFIER"})
+
+            def handle_tx(items):
+                for item in items or []:
+                    tx = item.get("tx")
+                    other = item.get("other")
+                    acc = item.get("acc")
+                    direction = item.get("direction")
+                    if not tx or not other or not acc:
+                        continue
+                    tx_ref = tx.get("tx_ref") or tx.get("id")
+                    add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
+                    other_id = other.get("account_number") or other.get("id")
+                    other_label = other.get("customer_name") or other.get("name") or other_id
+                    acc_id = acc.get("account_number") or acc.get("id")
+                    acc_label = acc.get("customer_name") or acc.get("name") or acc_id
+                    add_node(other_id, other_label, "Account", {"customerName": other_label})
+                    add_node(acc_id, acc_label, "Account", {"customerName": acc_label})
+                    if direction == "OUT":
+                        edges.append({"source": acc_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                        edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
+                    else:
+                        edges.append({"source": other_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                        edges.append({"source": tx_ref, "target": acc_id, "type": "TO"})
 
             handle_tx(record.get("outbound"))
             handle_tx(record.get("inbound"))
