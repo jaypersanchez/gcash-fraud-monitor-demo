@@ -2,7 +2,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 from sqlalchemy import select, text
@@ -33,17 +33,18 @@ if all([NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD]):
 
 
 def fetch_account_alerts(tx, min_risk: float):
+    """
+    Xavier data uses :Mule to represent flagged accounts.
+    Return them as high-risk accounts (riskScore forced to 1.0).
+    """
     cypher = """
-    MATCH (a:Account)
-    WHERE a.is_fraud = true
-       OR a.is_fraud = "True"
-       OR a.risk_score >= $minRisk
+    MATCH (a:Mule)
     RETURN
-      a.account_number AS accountId,
-      a.customer_name  AS customerName,
-      a.risk_score     AS riskScore,
-      a.is_fraud       AS isFraud
-    ORDER BY riskScore DESC
+      a.id   AS accountId,
+      a.name AS customerName,
+      1.0    AS riskScore,
+      true   AS isFraud
+    ORDER BY accountId
     LIMIT 100
     """
     result = tx.run(cypher, minRisk=min_risk)
@@ -51,17 +52,19 @@ def fetch_account_alerts(tx, min_risk: float):
 
 
 def fetch_account_alerts_r1(tx, min_risk: float, limit: int):
+    """
+    R1 for Xavier: treat all :Mule nodes as flagged/high-risk accounts.
+    We expose a fixed riskScore (1.0) and ignore min_risk because the dataset
+    does not store risk on Client/Mule nodes.
+    """
     cypher = """
-    MATCH (a:Account)
-    WHERE a.is_fraud = true
-       OR a.is_fraud = "True"
-       OR a.risk_score >= $minRisk
+    MATCH (a:Mule)
     RETURN
-      a.account_number AS accountId,
-      a.customer_name  AS customerName,
-      a.risk_score     AS riskScore,
-      a.is_fraud       AS isFraud
-    ORDER BY riskScore DESC
+      a.id   AS accountId,
+      a.name AS customerName,
+      1.0    AS riskScore,
+      true   AS isFraud
+    ORDER BY accountId
     LIMIT $limit
     """
     result = tx.run(cypher, minRisk=min_risk, limit=limit)
@@ -69,20 +72,25 @@ def fetch_account_alerts_r1(tx, min_risk: float, limit: int):
 
 
 def fetch_device_alerts_r2(tx, high_risk: float, min_risky: int, limit: int):
+    """
+    Xavier data has no Device nodes; use shared identifiers (Email/Phone/SSN) across mules.
+    Treat any identifier connected to >= min_risky Mule nodes as a risky hub.
+    """
     cypher = """
-    MATCH (d:Device)<-[:USES]-(a:Account)
-    WITH d,
-         collect(DISTINCT a) AS accounts,
-         count(DISTINCT CASE
-           WHEN a.is_fraud = true OR a.is_fraud = "True"
-             OR a.risk_score >= $highRiskThreshold
-           THEN a END) AS riskyAccountCount
-    WHERE riskyAccountCount >= $minRiskyAccounts
+    MATCH (id)<-[:HAS_EMAIL|HAS_PHONE|HAS_SSN]-(risky:Mule)
+    WITH id, collect(DISTINCT risky) AS riskyAccounts, count(DISTINCT risky) AS riskyCount
+    MATCH (id)<-[:HAS_EMAIL|HAS_PHONE|HAS_SSN]-(acc)
+    WITH id, riskyCount, collect(DISTINCT acc) AS allAccounts
+    WHERE riskyCount >= $minRiskyAccounts
     RETURN
-      d.device_id       AS deviceId,
-      d.device_type     AS deviceType,
-      size(accounts)    AS totalAccounts,
-      riskyAccountCount AS riskyAccounts
+      CASE
+        WHEN id.email IS NOT NULL THEN id.email
+        WHEN id.phoneNumber IS NOT NULL THEN id.phoneNumber
+        ELSE id.ssn
+      END AS deviceId,
+      head(labels(id)) AS deviceType,
+      size(allAccounts) AS totalAccounts,
+      riskyCount AS riskyAccounts
     ORDER BY riskyAccounts DESC, totalAccounts DESC
     LIMIT $limit
     """
@@ -96,20 +104,21 @@ def fetch_device_alerts_r2(tx, high_risk: float, min_risky: int, limit: int):
 
 
 def fetch_mule_ring_alerts_r3(tx, min_risky: int, limit: int):
+    """
+    Xavier data: detect mule rings as mules densely connected to other mules via TRANSACTED_WITH.
+    For each Mule, count distinct Mule peers; require count >= min_risky.
+    """
     cypher = """
-    MATCH (a:Account)-[:PERFORMS]->(t:Transaction {tags:'mule_ring'})-[:TO]->(b:Account)
-    WITH a, b, collect(DISTINCT t) AS txs
-    WITH collect(DISTINCT a) + collect(DISTINCT b) AS accounts, txs
-    WITH accounts, txs, size(accounts) AS ringSize
+    MATCH (m:Mule)-[:TRANSACTED_WITH]-(peer:Mule)
+    WITH m, collect(DISTINCT peer) AS peers, size(collect(DISTINCT peer)) AS ringSize
     WHERE ringSize >= $minRisky
-    UNWIND accounts AS acc
-    RETURN DISTINCT
-      acc.account_number AS accountId,
-      acc.customer_name AS customerName,
-      acc.risk_score AS riskScore,
-      acc.is_fraud AS isFraud,
+    RETURN
+      m.id   AS accountId,
+      m.name AS customerName,
+      1.0    AS riskScore,
+      true   AS isFraud,
       ringSize AS ringSize
-    ORDER BY ringSize DESC, riskScore DESC
+    ORDER BY ringSize DESC, accountId
     LIMIT $limit
     """
     result = tx.run(cypher, minRisky=min_risky, limit=limit)
@@ -117,18 +126,20 @@ def fetch_mule_ring_alerts_r3(tx, min_risky: int, limit: int):
 
 
 def fetch_hub_alerts_r7(tx, risk_threshold: float, min_risky: int, limit: int):
+    """
+    Xavier: risky senders are mules. Count distinct Mule senders to each destination
+    (Client or Mule) via PERFORMED->tx->TO edges.
+    """
     cypher = """
-    MATCH (src:Account)-[:PERFORMS]->(tx:Transaction)-[:TO]->(dst:Account)
-    WHERE src.is_fraud = true
-       OR src.is_fraud = "True"
-       OR src.risk_score >= $riskThreshold
+    MATCH (src:Mule)-[:PERFORMED]->(tx:Transaction)-[:TO]->(dst)
+    WHERE dst:Client OR dst:Mule
     WITH dst, collect(DISTINCT src) AS riskySenders, count(DISTINCT src) AS riskyCount, count(DISTINCT tx) AS txCount
     WHERE riskyCount >= $minRiskyAccounts
     RETURN
-      dst.account_number AS accountId,
-      dst.customer_name AS customerName,
-      dst.risk_score AS riskScore,
-      dst.is_fraud AS isFraud,
+      dst.id   AS accountId,
+      coalesce(dst.name, dst.id) AS customerName,
+      1.0    AS riskScore,
+      (dst:Mule) AS isFraud,
       riskyCount AS riskySenders,
       txCount AS txCount
     ORDER BY riskyCount DESC, txCount DESC
@@ -255,7 +266,7 @@ def create_app():
             risky = rec.get("riskyAccounts") or 0
             total = rec.get("totalAccounts") or 0
             severity = "High" if risky >= 3 else "Medium"
-            summary = f"Device {rec.get('deviceId')} used by {risky} risky / {total} total accounts"
+            summary = f"Identifier {rec.get('deviceId')} ({rec.get('deviceType')}) linked to {risky} risky / {total} total accounts"
             alerts.append(
                 {
                     "id": idx,
@@ -415,7 +426,7 @@ def create_app():
             risky = rec.get("riskyAccounts") or 0
             total = rec.get("totalAccounts") or 0
             severity = "High" if risky >= 3 else "Medium"
-            summary = f"Device {rec.get('deviceId')} used by {risky} risky / {total} total accounts"
+            summary = f"Identifier {rec.get('deviceId')} ({rec.get('deviceType')}) linked to {risky} risky / {total} total accounts"
             alerts.append(
                 {
                     "ruleKey": "R2",
