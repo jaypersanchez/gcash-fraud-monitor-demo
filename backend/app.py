@@ -400,9 +400,9 @@ def create_app():
             min_risky = 3
         try:
             limit = int(request.args.get("limit", 20))
-    except Exception:
-        limit = 20
-    exclude_flagged = str(request.args.get("excludeFlagged", "false")).lower() == "true"
+        except Exception:
+            limit = 20
+        exclude_flagged = str(request.args.get("excludeFlagged", "false")).lower() == "true"
 
     alerts = []
     with driver.session() as session:
