@@ -402,7 +402,10 @@ function renderGraph(nodes, edges) {
     const rect = graphContainer.getBoundingClientRect();
     const pos = evt.renderedPosition || { x: 0, y: 0 };
     const lines = [`${d.type}: ${d.label}`];
-    graphTooltip.innerHTML = lines.join("<br/>");
+    const type = d.type || "";
+    const label = d.label || "";
+    const flagText = d.isFlagged ? "<br/><strong style='color:#ffd166;'>Flagged</strong>" : "";
+    graphTooltip.innerHTML = `${type}: ${label}${flagText}`;
     graphTooltip.style.left = `${rect.left + pos.x + 12}px`;
     graphTooltip.style.top = `${rect.top + pos.y + 12}px`;
     graphTooltip.style.display = "block";
