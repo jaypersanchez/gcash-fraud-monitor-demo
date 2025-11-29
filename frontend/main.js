@@ -349,6 +349,12 @@ function renderGraph(nodes, edges) {
         style: { "background-color": "#ff8c42", "border-width": 2 },
       },
       {
+        selector: ".faded",
+        style: {
+          opacity: 0.15,
+        },
+      },
+      {
         selector: "edge",
         style: {
           width: 2,
@@ -370,11 +376,20 @@ function renderGraph(nodes, edges) {
     ],
   });
 
+  const focusNode = (nodeEle) => {
+    if (!nodeEle) return;
+    const neighborhood = nodeEle.closedNeighborhood();
+    cy.elements().removeClass("faded");
+    cy.elements().not(neighborhood).addClass("faded");
+    cy.fit(neighborhood, 80);
+  };
+
   cy.on("tap", "node", (evt) => {
     const node = evt.target.data();
     // Only drill into 13+ digit account-like IDs; skip banks/merchants/etc.
     const looksLikeAccount = node.type === "Account" && /^[0-9]{13,}$/.test(node.id);
     const looksLikeDevice = node.type === "Device";
+    focusNode(evt.target);
     if (looksLikeAccount) {
       selectedAccountId = node.id;
       selectedDeviceId = null;
@@ -389,6 +404,13 @@ function renderGraph(nodes, edges) {
       if (neoStatus) neoStatus.textContent = `Selected identifier ${node.id} (R2)`;
       updateSelectionInfo();
       loadGraphForSelected();
+    }
+  });
+
+  cy.on("tap", (evt) => {
+    if (evt.target === cy) {
+      cy.elements().removeClass("faded");
+      cy.fit();
     }
   });
 
