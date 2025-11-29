@@ -42,6 +42,7 @@ let selectedRuleKey = null;
 let selectedAlert = null;
 const notesByAnchor = {};
 const actionsByAnchor = {};
+let graphTooltip = null;
 
 const severityClass = (severity) => {
   const map = {
@@ -242,6 +243,26 @@ function renderGraph(nodes, edges) {
   if (!graphContainer) return;
   if (!graphContainer || typeof cytoscape === "undefined") return;
 
+  if (!graphTooltip) {
+    graphTooltip = document.createElement("div");
+    graphTooltip.id = "graph-tooltip";
+    Object.assign(graphTooltip.style, {
+      position: "fixed",
+      display: "none",
+      padding: "6px 10px",
+      background: "#0c1a36",
+      color: "#f8fbff",
+      borderRadius: "6px",
+      fontSize: "12px",
+      boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+      zIndex: 9999,
+      pointerEvents: "none",
+      maxWidth: "240px",
+      lineHeight: "1.3",
+    });
+    document.body.appendChild(graphTooltip);
+  }
+
   const cy = cytoscape({
     container: graphContainer,
     elements: [
@@ -339,6 +360,25 @@ function renderGraph(nodes, edges) {
       loadGraphForSelected();
     }
   });
+
+  const hideTooltip = () => {
+    if (graphTooltip) graphTooltip.style.display = "none";
+  };
+
+  cy.on("mouseover", "node", (evt) => {
+    if (!graphTooltip) return;
+    const d = evt.target.data();
+    const rect = graphContainer.getBoundingClientRect();
+    const pos = evt.renderedPosition || { x: 0, y: 0 };
+    const lines = [`${d.type}: ${d.label}`];
+    graphTooltip.innerHTML = lines.join("<br/>");
+    graphTooltip.style.left = `${rect.left + pos.x + 12}px`;
+    graphTooltip.style.top = `${rect.top + pos.y + 12}px`;
+    graphTooltip.style.display = "block";
+  });
+
+  cy.on("mouseout", "node", hideTooltip);
+  cy.on("pan zoom", hideTooltip);
 
   cy.zoomingEnabled(true);
   cy.panningEnabled(true);
