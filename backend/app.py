@@ -58,6 +58,14 @@ def is_flagged_record(rec: dict, anchor_type: str) -> bool:
     if str(rec.get("isFraud")).lower() == "true":
         return True
     return is_locally_flagged(anchor_id, anchor_type)
+
+def is_flagged_record(rec: dict, anchor_type: str) -> bool:
+    anchor_id = rec.get("accountId") or rec.get("deviceId")
+    if not anchor_id:
+        return False
+    if str(rec.get("isFraud")).lower() == "true":
+        return True
+    return is_locally_flagged(anchor_id, anchor_type)
 def fetch_account_alerts(tx, min_risk: float):
     """
     Xavier data uses :Mule to represent flagged accounts.
@@ -526,9 +534,114 @@ def create_app():
                         "summary": summary,
                         "status": "Open",
                         "created": datetime.utcnow().isoformat() + "Z",
-                    }
-                )
+                }
+            )
         return jsonify(alerts)
+
+    @app.route("/api/ai-agent/top", methods=["GET"])
+    def ai_agent_top():
+        """
+        Background agent helper: list top unflagged suspects across R1/R2/R3/R7.
+        """
+        if not driver:
+            return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
+        try:
+            risk_threshold = float(request.args.get("riskThreshold", 0.8))
+        except Exception:
+            risk_threshold = 0.8
+        try:
+            high_risk = float(request.args.get("highRiskThreshold", 0.8))
+        except Exception:
+            high_risk = risk_threshold
+        try:
+            min_risky = int(request.args.get("minRiskyAccounts", 3))
+        except Exception:
+            min_risky = 3
+        try:
+            limit = int(request.args.get("limit", 5))
+        except Exception:
+            limit = 5
+
+        alerts = []
+        with driver.session() as session:
+            r1 = session.execute_read(fetch_account_alerts_r1, risk_threshold, limit)
+            r2 = session.execute_read(fetch_device_alerts_r2, high_risk, min_risky, limit)
+            r3 = session.execute_read(fetch_mule_ring_alerts_r3, min_risky, limit)
+            r7 = session.execute_read(fetch_hub_alerts_r7, risk_threshold, min_risky, limit)
+
+        def severity_rank(sev: str) -> int:
+            order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+            return order.get(sev, 3)
+
+        for idx, rec in enumerate(r1, start=1):
+            if is_flagged_record(rec, "ACCOUNT"):
+                continue
+            risk = rec.get("riskScore") or 0
+            severity = "Critical" if risk >= 0.95 else "High" if risk >= 0.9 else "Medium"
+            alerts.append(
+                {
+                    "ruleKey": "R1",
+                    "id": f"R1-{idx}",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "severity": severity,
+                    "summary": f"{rec.get('customerName')} ({rec.get('accountId')}) risk={risk:.2f}",
+                }
+            )
+
+        for idx, rec in enumerate(r2, start=1):
+            if is_flagged_record(rec, "DEVICE"):
+                continue
+            risky = rec.get("riskyAccounts") or 0
+            total = rec.get("totalAccounts") or 0
+            severity = "High" if risky >= 3 else "Medium"
+            alerts.append(
+                {
+                    "ruleKey": "R2",
+                    "id": f"R2-{idx}",
+                    "deviceId": rec.get("deviceId"),
+                    "deviceType": rec.get("deviceType"),
+                    "severity": severity,
+                    "summary": f"{rec.get('deviceId')} linked to {risky} risky / {total} total",
+                }
+            )
+
+        for idx, rec in enumerate(r3, start=1):
+            if is_flagged_record(rec, "ACCOUNT"):
+                continue
+            ring_size = rec.get("ringSize") or 0
+            risk = rec.get("riskScore") or 0
+            severity = "Critical" if ring_size >= 5 else "High"
+            alerts.append(
+                {
+                    "ruleKey": "R3",
+                    "id": f"R3-{idx}",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "severity": severity,
+                    "summary": f"{rec.get('accountId')} in ring size {ring_size} (risk={risk:.2f})",
+                }
+            )
+
+        for idx, rec in enumerate(r7, start=1):
+            if is_flagged_record(rec, "ACCOUNT"):
+                continue
+            risky = rec.get("riskySenders") or 0
+            tx_count = rec.get("txCount") or 0
+            severity = "Critical" if risky >= 5 else "High"
+            alerts.append(
+                {
+                    "ruleKey": "R7",
+                    "id": f"R7-{idx}",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "severity": severity,
+                    "summary": f"{rec.get('accountId')} receives from {risky} risky senders ({tx_count} tx)",
+                }
+            )
+
+        alerts_sorted = sorted(alerts, key=lambda a: severity_rank(a.get("severity")))
+        return jsonify(alerts_sorted[:limit])
 
     @app.route("/api/db-health", methods=["GET"])
     def db_health():
