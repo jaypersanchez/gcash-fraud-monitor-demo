@@ -315,15 +315,26 @@ function renderGraph(nodes, edges) {
       },
       {
         selector: "node[type = 'Device']",
-        style: { "background-color": "#01c2c5" },
+        style: { "background-color": "#01c2c5", shape: "diamond" },
       },
       {
         selector: "node[type = 'Transaction']",
-        style: { "background-color": "#ffd166" },
+        style: { "background-color": "#ffd166", shape: "round-rectangle" },
       },
       {
         selector: "node[?isSubject]",
         style: { "background-color": "#ff8c42", "border-width": 2 },
+      },
+      {
+        selector: "node[?isFlagged]",
+        style: {
+          "background-color": "#e63946",
+          "border-color": "#8b1b1b",
+          "border-width": 2,
+          color: "#f8fbff",
+          "text-outline-color": "#8b1b1b",
+          "text-outline-width": 2,
+        },
       },
       {
         selector: "edge",

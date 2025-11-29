@@ -1,6 +1,8 @@
 from flask import Blueprint, jsonify
 
 from backend.services.neo4j_client import check_connectivity, get_driver
+from backend.db.session import get_session
+from backend.models.investigator_action import InvestigatorAction
 
 neo4j_bp = Blueprint("neo4j", __name__)
 
@@ -14,26 +16,65 @@ def neo4j_health():
         return jsonify({"status": "error", "message": str(exc)}), 500
 
 
+def _record_flag(anchor_id: str, anchor_type: str):
+    session = get_session()
+    try:
+        action = InvestigatorAction(
+            anchor_id=anchor_id,
+            anchor_type=anchor_type,
+            action="FLAG",
+            status="FLAGGED",
+        )
+        session.add(action)
+        session.commit()
+    finally:
+        session.close()
+
+
+def _flagged_map(anchor_ids, anchor_type: str):
+    if not anchor_ids:
+        return set()
+    session = get_session()
+    try:
+        rows = (
+            session.query(InvestigatorAction.anchor_id)
+            .filter(
+                InvestigatorAction.anchor_id.in_(list(anchor_ids)),
+                InvestigatorAction.anchor_type == anchor_type,
+                InvestigatorAction.action == "FLAG",
+            )
+            .all()
+        )
+        return {r.anchor_id for r in rows}
+    finally:
+        session.close()
+
+
 @neo4j_bp.route("/neo4j/flag/account/<account_id>", methods=["POST"])
 def neo4j_flag_account(account_id: str):
+    # Persist flag in Postgres so we don't rely on mutating remote Neo4j
+    _record_flag(account_id, "ACCOUNT")
+    # Best-effort: try to set a flag property in Neo4j, but ignore failures
     cypher = """
     MATCH (a)
     WHERE (a:Account AND a.account_number = $accountId)
        OR (a:Mule AND a.id = $accountId)
        OR (a:Client AND a.id = $accountId)
-    SET a.is_fraud = true, a.flagged_at = datetime()
+    SET a.flagged = true, a.flagged_at = datetime()
     RETURN coalesce(a.account_number, a.id) AS accountId
     """
-    with get_driver() as driver:
-        with driver.session() as session:
-            rec = session.run(cypher, accountId=account_id).single()
-            if not rec:
-                return jsonify({"status": "error", "message": "Account not found"}), 404
+    try:
+        with get_driver() as driver:
+            with driver.session() as session:
+                session.run(cypher, accountId=account_id).consume()
+    except Exception:
+        pass
     return jsonify({"status": "ok", "accountId": account_id})
 
 
 @neo4j_bp.route("/neo4j/flag/device/<device_id>", methods=["POST"])
 def neo4j_flag_device(device_id: str):
+    _record_flag(device_id, "DEVICE")
     cypher = """
     MATCH (d)
     WHERE (d:Device AND d.device_id = $deviceId)
@@ -49,11 +90,12 @@ def neo4j_flag_device(device_id: str):
         ELSE d.ssn
       END AS deviceId
     """
-    with get_driver() as driver:
-        with driver.session() as session:
-            rec = session.run(cypher, deviceId=device_id).single()
-            if not rec:
-                return jsonify({"status": "error", "message": "Device not found"}), 404
+    try:
+        with get_driver() as driver:
+            with driver.session() as session:
+                session.run(cypher, deviceId=device_id).consume()
+    except Exception:
+        pass
     return jsonify({"status": "ok", "deviceId": device_id})
 
 
@@ -145,6 +187,15 @@ def neo4j_graph_account(account_id: str):
             handle_tx(record.get("outbound"))
             handle_tx(record.get("inbound"))
 
+    # Overlay flags from Postgres
+    account_ids = [n["id"] for n in nodes.values() if n["type"] == "Account"]
+    device_ids = [n["id"] for n in nodes.values() if n["type"] == "Device"]
+    flagged_accounts = _flagged_map(account_ids, "ACCOUNT")
+    flagged_devices = _flagged_map(device_ids, "DEVICE")
+    for n in nodes.values():
+        if n["id"] in flagged_accounts or n["id"] in flagged_devices:
+            n["isFlagged"] = True
+
     return jsonify({"status": "ok", "nodes": list(nodes.values()), "edges": edges})
 
 
@@ -235,6 +286,15 @@ def neo4j_graph_device(device_id: str):
             handle_tx(record.get("outbound"))
             handle_tx(record.get("inbound"))
 
+    # Overlay flags from Postgres
+    account_ids = [n["id"] for n in nodes.values() if n["type"] == "Account"]
+    device_ids = [n["id"] for n in nodes.values() if n["type"] == "Device"]
+    flagged_accounts = _flagged_map(account_ids, "ACCOUNT")
+    flagged_devices = _flagged_map(device_ids, "DEVICE")
+    for n in nodes.values():
+        if n["id"] in flagged_accounts or n["id"] in flagged_devices:
+            n["isFlagged"] = True
+
     return jsonify({"status": "ok", "nodes": list(nodes.values()), "edges": edges})
 
 
@@ -312,5 +372,14 @@ def neo4j_graph_identifier(identifier: str):
 
             handle_tx(record.get("outbound"))
             handle_tx(record.get("inbound"))
+
+    # Overlay flags from Postgres
+    account_ids = [n["id"] for n in nodes.values() if n["type"] == "Account"]
+    device_ids = [n["id"] for n in nodes.values() if n["type"] == "Device"]
+    flagged_accounts = _flagged_map(account_ids, "ACCOUNT")
+    flagged_devices = _flagged_map(device_ids, "DEVICE")
+    for n in nodes.values():
+        if n["id"] in flagged_accounts or n["id"] in flagged_devices:
+            n["isFlagged"] = True
 
     return jsonify({"status": "ok", "nodes": list(nodes.values()), "edges": edges})
