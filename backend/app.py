@@ -382,139 +382,139 @@ def create_app():
             )
         return jsonify(alerts)
 
-@app.route("/api/neo-alerts/search", methods=["GET"])
-def neo4j_search_all_rules():
-    if not driver:
-        return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
-    try:
-        risk_threshold = float(request.args.get("riskThreshold", 0.8))
-    except Exception:
-        risk_threshold = 0.8
-    try:
-        high_risk = float(request.args.get("highRiskThreshold", 0.8))
-    except Exception:
-        high_risk = risk_threshold
-    try:
-        min_risky = int(request.args.get("minRiskyAccounts", 3))
-    except Exception:
-        min_risky = 3
-    try:
-        limit = int(request.args.get("limit", 20))
-    except Exception:
-        limit = 20
-    exclude_flagged = str(request.args.get("excludeFlagged", "false")).lower() == "true"
+    @app.route("/api/neo-alerts/search", methods=["GET"])
+    def neo4j_search_all_rules():
+        if not driver:
+            return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
+        try:
+            risk_threshold = float(request.args.get("riskThreshold", 0.8))
+        except Exception:
+            risk_threshold = 0.8
+        try:
+            high_risk = float(request.args.get("highRiskThreshold", 0.8))
+        except Exception:
+            high_risk = risk_threshold
+        try:
+            min_risky = int(request.args.get("minRiskyAccounts", 3))
+        except Exception:
+            min_risky = 3
+        try:
+            limit = int(request.args.get("limit", 20))
+        except Exception:
+            limit = 20
+        exclude_flagged = str(request.args.get("excludeFlagged", "false")).lower() == "true"
 
-    alerts = []
-    with driver.session() as session:
-        r1 = session.execute_read(fetch_account_alerts_r1, risk_threshold, limit)
-        r2 = session.execute_read(fetch_device_alerts_r2, high_risk, min_risky, limit)
-        r3 = session.execute_read(fetch_mule_ring_alerts_r3, min_risky, limit)
-        r7 = session.execute_read(fetch_hub_alerts_r7, risk_threshold, min_risky, limit)
+        alerts = []
+        with driver.session() as session:
+            r1 = session.execute_read(fetch_account_alerts_r1, risk_threshold, limit)
+            r2 = session.execute_read(fetch_device_alerts_r2, high_risk, min_risky, limit)
+            r3 = session.execute_read(fetch_mule_ring_alerts_r3, min_risky, limit)
+            r7 = session.execute_read(fetch_hub_alerts_r7, risk_threshold, min_risky, limit)
 
-        def is_flagged(rec, anchor_type):
-            anchor_id = (rec.get("accountId") or rec.get("deviceId"))
-            if not anchor_id:
-                return False
-            return is_locally_flagged(anchor_id, anchor_type)
+            def is_flagged(rec, anchor_type):
+                anchor_id = (rec.get("accountId") or rec.get("deviceId"))
+                if not anchor_id:
+                    return False
+                return is_locally_flagged(anchor_id, anchor_type)
 
-        # R1
-        for idx, rec in enumerate(r1, start=1):
-            if exclude_flagged and is_flagged(rec, "ACCOUNT"):
-                continue
-            risk = rec.get("riskScore") or 0
-            if risk >= 0.95:
-                severity = "Critical"
-            elif risk >= 0.9:
-                severity = "High"
-            else:
-                severity = "Medium"
-            summary = f"{rec.get('customerName')} ({rec.get('accountId')}) risk={risk:.2f} is_fraud={rec.get('isFraud')}"
-            alerts.append(
-                {
-                    "ruleKey": "R1",
-                    "id": f"R1-{idx}",
-                    "accountId": rec.get("accountId"),
-                    "customerName": rec.get("customerName"),
-                    "riskScore": risk,
-                    "severity": severity,
-                    "rule": "R1 – High risk / flagged account",
-                    "summary": summary,
-                    "status": "Open",
-                    "created": datetime.utcnow().isoformat() + "Z",
-                }
-            )
-        # R2
-        for idx, rec in enumerate(r2, start=1):
-            risky = rec.get("riskyAccounts") or 0
-            total = rec.get("totalAccounts") or 0
-            severity = "High" if risky >= 3 else "Medium"
-            if exclude_flagged and is_flagged(rec, "DEVICE"):
-                continue
-            summary = f"Identifier {rec.get('deviceId')} ({rec.get('deviceType')}) linked to {risky} risky / {total} total accounts"
-            alerts.append(
-                {
-                    "ruleKey": "R2",
-                    "id": f"R2-{idx}",
-                    "deviceId": rec.get("deviceId"),
-                    "deviceType": rec.get("deviceType"),
-                    "riskyAccounts": risky,
-                    "totalAccounts": total,
-                    "severity": severity,
-                    "rule": "R2 – Shared risky device",
-                    "summary": summary,
-                    "status": "Open",
-                    "created": datetime.utcnow().isoformat() + "Z",
-                }
-            )
-        # R3
-        for idx, rec in enumerate(r3, start=1):
-            if exclude_flagged and is_flagged(rec, "ACCOUNT"):
-                continue
-            ring_size = rec.get("ringSize") or 0
-            risk = rec.get("riskScore") or 0
-            severity = "Critical" if ring_size >= 5 else "High"
-            summary = f"Account {rec.get('accountId')} in ring of size {ring_size} (risk={risk:.2f})"
-            alerts.append(
-                {
-                    "ruleKey": "R3",
-                    "id": f"R3-{idx}",
-                    "accountId": rec.get("accountId"),
-                    "customerName": rec.get("customerName"),
-                    "riskScore": risk,
-                    "ringSize": ring_size,
-                    "severity": severity,
-                    "rule": "R3 – Mule ring flow",
-                    "summary": summary,
-                    "status": "Open",
-                    "created": datetime.utcnow().isoformat() + "Z",
-                }
-            )
-        # R7
-        for idx, rec in enumerate(r7, start=1):
-            if exclude_flagged and is_flagged(rec, "ACCOUNT"):
-                continue
-            risky = rec.get("riskySenders") or 0
-            tx_count = rec.get("txCount") or 0
-            risk = rec.get("riskScore") or 0
-            severity = "Critical" if risky >= 5 else "High"
-            summary = f"Hub {rec.get('accountId')} receives from {risky} risky senders ({tx_count} tx)"
-            alerts.append(
-                {
-                    "ruleKey": "R7",
-                    "id": f"R7-{idx}",
-                    "accountId": rec.get("accountId"),
-                    "customerName": rec.get("customerName"),
-                    "riskScore": risk,
-                    "riskySenders": risky,
-                    "txCount": tx_count,
-                    "severity": severity,
-                    "rule": "R7 – Risky funnel to hub",
-                    "summary": summary,
-                    "status": "Open",
-                    "created": datetime.utcnow().isoformat() + "Z",
-                }
-            )
-    return jsonify(alerts)
+            # R1
+            for idx, rec in enumerate(r1, start=1):
+                if exclude_flagged and is_flagged(rec, "ACCOUNT"):
+                    continue
+                risk = rec.get("riskScore") or 0
+                if risk >= 0.95:
+                    severity = "Critical"
+                elif risk >= 0.9:
+                    severity = "High"
+                else:
+                    severity = "Medium"
+                summary = f"{rec.get('customerName')} ({rec.get('accountId')}) risk={risk:.2f} is_fraud={rec.get('isFraud')}"
+                alerts.append(
+                    {
+                        "ruleKey": "R1",
+                        "id": f"R1-{idx}",
+                        "accountId": rec.get("accountId"),
+                        "customerName": rec.get("customerName"),
+                        "riskScore": risk,
+                        "severity": severity,
+                        "rule": "R1 – High risk / flagged account",
+                        "summary": summary,
+                        "status": "Open",
+                        "created": datetime.utcnow().isoformat() + "Z",
+                    }
+                )
+            # R2
+            for idx, rec in enumerate(r2, start=1):
+                risky = rec.get("riskyAccounts") or 0
+                total = rec.get("totalAccounts") or 0
+                severity = "High" if risky >= 3 else "Medium"
+                if exclude_flagged and is_flagged(rec, "DEVICE"):
+                    continue
+                summary = f"Identifier {rec.get('deviceId')} ({rec.get('deviceType')}) linked to {risky} risky / {total} total accounts"
+                alerts.append(
+                    {
+                        "ruleKey": "R2",
+                        "id": f"R2-{idx}",
+                        "deviceId": rec.get("deviceId"),
+                        "deviceType": rec.get("deviceType"),
+                        "riskyAccounts": risky,
+                        "totalAccounts": total,
+                        "severity": severity,
+                        "rule": "R2 – Shared risky device",
+                        "summary": summary,
+                        "status": "Open",
+                        "created": datetime.utcnow().isoformat() + "Z",
+                    }
+                )
+            # R3
+            for idx, rec in enumerate(r3, start=1):
+                if exclude_flagged and is_flagged(rec, "ACCOUNT"):
+                    continue
+                ring_size = rec.get("ringSize") or 0
+                risk = rec.get("riskScore") or 0
+                severity = "Critical" if ring_size >= 5 else "High"
+                summary = f"Account {rec.get('accountId')} in ring of size {ring_size} (risk={risk:.2f})"
+                alerts.append(
+                    {
+                        "ruleKey": "R3",
+                        "id": f"R3-{idx}",
+                        "accountId": rec.get("accountId"),
+                        "customerName": rec.get("customerName"),
+                        "riskScore": risk,
+                        "ringSize": ring_size,
+                        "severity": severity,
+                        "rule": "R3 – Mule ring flow",
+                        "summary": summary,
+                        "status": "Open",
+                        "created": datetime.utcnow().isoformat() + "Z",
+                    }
+                )
+            # R7
+            for idx, rec in enumerate(r7, start=1):
+                if exclude_flagged and is_flagged(rec, "ACCOUNT"):
+                    continue
+                risky = rec.get("riskySenders") or 0
+                tx_count = rec.get("txCount") or 0
+                risk = rec.get("riskScore") or 0
+                severity = "Critical" if risky >= 5 else "High"
+                summary = f"Hub {rec.get('accountId')} receives from {risky} risky senders ({tx_count} tx)"
+                alerts.append(
+                    {
+                        "ruleKey": "R7",
+                        "id": f"R7-{idx}",
+                        "accountId": rec.get("accountId"),
+                        "customerName": rec.get("customerName"),
+                        "riskScore": risk,
+                        "riskySenders": risky,
+                        "txCount": tx_count,
+                        "severity": severity,
+                        "rule": "R7 – Risky funnel to hub",
+                        "summary": summary,
+                        "status": "Open",
+                        "created": datetime.utcnow().isoformat() + "Z",
+                    }
+                )
+        return jsonify(alerts)
 
     @app.route("/api/db-health", methods=["GET"])
     def db_health():
