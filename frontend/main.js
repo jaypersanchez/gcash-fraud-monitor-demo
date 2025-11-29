@@ -265,8 +265,10 @@ function renderGraph(nodes, edges) {
     ],
     layout: {
       name: "cose",
-      padding: 20,
+      padding: 40,
       animate: false,
+      idealEdgeLength: 160,
+      nodeRepulsion: 12000,
     },
     style: [
       {
@@ -315,7 +317,9 @@ function renderGraph(nodes, edges) {
 
   cy.on("tap", "node", (evt) => {
     const node = evt.target.data();
-    if (node.type === "Account") {
+    // Only drill into 13+ digit account-like IDs; skip banks/merchants/etc.
+    const looksLikeAccount = node.type === "Account" && /^[0-9]{13,}$/.test(node.id);
+    if (looksLikeAccount) {
       selectedAccountId = node.id;
       selectedDeviceId = null;
       selectedRuleKey = selectedRuleKey || getRule();
@@ -324,6 +328,10 @@ function renderGraph(nodes, edges) {
       loadGraphForSelected();
     }
   });
+
+  cy.zoomingEnabled(true);
+  cy.panningEnabled(true);
+  cy.fit();
 }
 
 if (loadGraphBtn) {
