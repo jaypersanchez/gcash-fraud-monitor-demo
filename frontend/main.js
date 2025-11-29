@@ -468,7 +468,8 @@ if (openImporterBtn) {
 }
 if (openBloomBtn) {
   openBloomBtn.addEventListener("click", () => {
-    window.open("neo4j://graphapps/neo4j-bloom", "_blank");
+    // Use protocol handler for Neo4j Desktop Bloom
+    window.location.href = "neo4j://graphapps/neo4j-bloom";
   });
 }
 
