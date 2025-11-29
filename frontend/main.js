@@ -7,7 +7,7 @@ const alertsNav = document.getElementById("alerts-nav");
 const alertsSection = document.getElementById("alerts-section");
 const neoTestButton = document.getElementById("neo-test");
 const neoStatus = document.getElementById("neo-status");
-const graphSvg = document.getElementById("graph-svg");
+const graphContainer = document.getElementById("graph-container");
 const loadGraphBtn = document.getElementById("load-graph");
 const riskSlider = document.getElementById("riskThreshold");
 const limitInput = document.getElementById("limitInput");
@@ -239,94 +239,91 @@ async function loadGraphForSelected() {
 }
 
 function renderGraph(nodes, edges) {
-  if (!graphSvg) return;
-  const width = 1200;
-  const height = 800;
-  graphSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  graphSvg.innerHTML = "";
+  if (!graphContainer) return;
+  if (!graphContainer || typeof cytoscape === "undefined") return;
 
-  const accounts = nodes.filter((n) => n.type === "Account");
-  const devices = nodes.filter((n) => n.type === "Device");
-  const txs = nodes.filter((n) => n.type === "Transaction");
-
-  const layout = (arr, y) => arr.map((n, idx) => ({ ...n, x: 80 + idx * (width / Math.max(arr.length, 1)), y }));
-  const accPlaced = layout(accounts, 60);
-  const devPlaced = layout(devices, 160);
-  const txPlaced = layout(txs, 260);
-  const placedMap = {};
-  [...accPlaced, ...devPlaced, ...txPlaced].forEach((n) => (placedMap[n.id] = n));
-
-  const svgNS = "http://www.w3.org/2000/svg";
-
-  const defs = document.createElementNS(svgNS, "defs");
-  const marker = document.createElementNS(svgNS, "marker");
-  marker.setAttribute("id", "arrow");
-  marker.setAttribute("markerWidth", "10");
-  marker.setAttribute("markerHeight", "10");
-  marker.setAttribute("refX", "5");
-  marker.setAttribute("refY", "3");
-  marker.setAttribute("orient", "auto");
-  const path = document.createElementNS(svgNS, "path");
-  path.setAttribute("d", "M0,0 L0,6 L6,3 z");
-  path.setAttribute("fill", "#a5b4d0");
-  marker.appendChild(path);
-  defs.appendChild(marker);
-  graphSvg.appendChild(defs);
-
-  edges.forEach((e) => {
-    const src = placedMap[e.source];
-    const tgt = placedMap[e.target];
-    if (!src || !tgt) return;
-    const line = document.createElementNS(svgNS, "line");
-    line.setAttribute("x1", src.x);
-    line.setAttribute("y1", src.y);
-    line.setAttribute("x2", tgt.x);
-    line.setAttribute("y2", tgt.y);
-    line.setAttribute("stroke", "#a5b4d0");
-    line.setAttribute("stroke-width", "2");
-    line.setAttribute("marker-end", "url(#arrow)");
-    if (e.label) {
-      const title = document.createElementNS(svgNS, "title");
-      title.textContent = `${e.type}${e.label ? " - " + e.label : ""}`;
-      line.appendChild(title);
-    }
-    graphSvg.appendChild(line);
+  const cy = cytoscape({
+    container: graphContainer,
+    elements: [
+      ...nodes.map((n) => ({
+        data: {
+          id: n.id,
+          label: n.label,
+          type: n.type,
+          isSubject: !!n.isSubject,
+        },
+      })),
+      ...edges.map((e, idx) => ({
+        data: {
+          id: `e-${idx}-${e.source}-${e.target}`,
+          source: e.source,
+          target: e.target,
+          label: e.label || e.type,
+          type: e.type,
+        },
+      })),
+    ],
+    layout: {
+      name: "cose",
+      padding: 20,
+      animate: false,
+    },
+    style: [
+      {
+        selector: "node",
+        style: {
+          "background-color": "#0077f6",
+          "border-color": "#0c1a36",
+          "border-width": 1,
+          label: "data(label)",
+          color: "#0c1a36",
+          "font-size": 10,
+          "text-valign": "center",
+          "text-halign": "center",
+          "text-wrap": "wrap",
+          "text-max-width": 120,
+        },
+      },
+      {
+        selector: "node[type = 'Device']",
+        style: { "background-color": "#01c2c5" },
+      },
+      {
+        selector: "node[type = 'Transaction']",
+        style: { "background-color": "#ffd166" },
+      },
+      {
+        selector: "node[isSubject = 1]",
+        style: { "background-color": "#ff8c42", "border-width": 2 },
+      },
+      {
+        selector: "edge",
+        style: {
+          width: 2,
+          "line-color": "#a5b4d0",
+          "target-arrow-color": "#a5b4d0",
+          "target-arrow-shape": "triangle",
+          "curve-style": "bezier",
+          label: "data(label)",
+          "font-size": 9,
+          color: "#627089",
+          "text-rotation": "autorotate",
+        },
+      },
+    ],
   });
 
-  const drawNode = (n, color) => {
-    const g = document.createElementNS(svgNS, "g");
-    const circle = document.createElementNS(svgNS, "circle");
-    circle.setAttribute("cx", n.x);
-    circle.setAttribute("cy", n.y);
-    circle.setAttribute("r", 14);
-    circle.setAttribute("fill", color);
-    circle.setAttribute("stroke", "#0c1a36");
-    circle.setAttribute("stroke-width", "1");
-    g.appendChild(circle);
-    const text = document.createElementNS(svgNS, "text");
-    text.setAttribute("x", n.x);
-    text.setAttribute("y", n.y + 28);
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute("font-size", "10");
-    text.setAttribute("fill", "#0c1a36");
-    text.textContent = n.label;
-    g.appendChild(text);
-    g.addEventListener("click", () => {
-      if (n.type === "Account") {
-        selectedAccountId = n.id;
-        selectedDeviceId = null;
-        selectedRuleKey = selectedRuleKey || getRule();
-        if (neoStatus) neoStatus.textContent = `Selected account ${n.id} (drill-down)`;
-        updateSelectionInfo();
-        loadGraphForSelected();
-      }
-    });
-    graphSvg.appendChild(g);
-  };
-
-  accPlaced.forEach((n) => drawNode(n, n.isSubject ? "#ff8c42" : "#0077f6"));
-  devPlaced.forEach((n) => drawNode(n, n.isSubject ? "#ff8c42" : "#01c2c5"));
-  txPlaced.forEach((n) => drawNode(n, "#ffd166"));
+  cy.on("tap", "node", (evt) => {
+    const node = evt.target.data();
+    if (node.type === "Account") {
+      selectedAccountId = node.id;
+      selectedDeviceId = null;
+      selectedRuleKey = selectedRuleKey || getRule();
+      if (neoStatus) neoStatus.textContent = `Selected account ${node.id} (drill-down)`;
+      updateSelectionInfo();
+      loadGraphForSelected();
+    }
+  });
 }
 
 if (loadGraphBtn) {
