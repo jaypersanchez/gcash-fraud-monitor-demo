@@ -166,7 +166,7 @@ def neo4j_graph_account(account_id: str):
                     dev_type = "Phone"
                 elif "ssn" in id_node:
                     dev_type = "SSN"
-                flagged_id = _is_flagged(id_node, labels(id_node) if hasattr(id_node, "keys") else None)
+                flagged_id = _is_flagged(id_node)
                 add_node(device_id, device_id, "Device", {"deviceType": dev_type, "isFlagged": flagged_id})
                 edges.append({"source": anchor_id, "target": device_id, "type": "HAS_IDENTIFIER"})
 
@@ -182,7 +182,7 @@ def neo4j_graph_account(account_id: str):
                 peer_label = peer.get("customer_name") or peer.get("name") or peer_id
                 flagged_peer = _is_flagged(peer, peer_labels)
                 add_node(peer_id, peer_label, "Account", {"customerName": peer_label, "isFlagged": flagged_peer})
-                flagged_id = _is_flagged(id_node, labels(id_node) if hasattr(id_node, "keys") else None)
+                flagged_id = _is_flagged(id_node)
                 add_node(device_id, device_id, "Device", {"deviceType": "Identifier", "isFlagged": flagged_id})
                 edges.append({"source": peer_id, "target": device_id, "type": "HAS_IDENTIFIER"})
 
@@ -275,7 +275,7 @@ def neo4j_graph_device(device_id: str):
                 device_type = "Phone"
             elif "ssn" in d:
                 device_type = "SSN"
-            flagged_id = _is_flagged(d, labels(d) if hasattr(d, "keys") else None)
+            flagged_id = _is_flagged(d)
             add_node(device_id_val, device_id_val, "Device", {"deviceType": device_type, "isSubject": True, "isFlagged": flagged_id})
 
             for acc_entry in record["accounts"] or []:
