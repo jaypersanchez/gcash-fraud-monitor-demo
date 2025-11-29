@@ -351,11 +351,19 @@ function renderGraph(nodes, edges) {
     const node = evt.target.data();
     // Only drill into 13+ digit account-like IDs; skip banks/merchants/etc.
     const looksLikeAccount = node.type === "Account" && /^[0-9]{13,}$/.test(node.id);
+    const looksLikeDevice = node.type === "Device";
     if (looksLikeAccount) {
       selectedAccountId = node.id;
       selectedDeviceId = null;
       selectedRuleKey = selectedRuleKey || getRule();
       if (neoStatus) neoStatus.textContent = `Selected account ${node.id} (drill-down)`;
+      updateSelectionInfo();
+      loadGraphForSelected();
+    } else if (looksLikeDevice) {
+      selectedDeviceId = node.id;
+      selectedAccountId = null;
+      selectedRuleKey = "R2";
+      if (neoStatus) neoStatus.textContent = `Selected identifier ${node.id} (R2)`;
       updateSelectionInfo();
       loadGraphForSelected();
     }
