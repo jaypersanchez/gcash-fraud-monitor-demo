@@ -27,6 +27,7 @@ const noteList = document.getElementById("note-list");
 const noteCount = document.getElementById("note-count");
 const openWorkspaceBtn = document.getElementById("open-workspace");
 const openImporterBtn = document.getElementById("open-importer");
+const openBloomBtn = document.getElementById("open-bloom");
 const caseStatus = document.getElementById("case-status");
 const caseActionStatus = document.getElementById("case-action-status");
 const caseBlockBtn = document.getElementById("case-block");
@@ -463,6 +464,11 @@ if (openWorkspaceBtn) {
 if (openImporterBtn) {
   openImporterBtn.addEventListener("click", () => {
     window.open("https://data-importer.neo4j.io", "_blank");
+  });
+}
+if (openBloomBtn) {
+  openBloomBtn.addEventListener("click", () => {
+    window.open("neo4j://graphapps/neo4j-bloom", "_blank");
   });
 }
 
