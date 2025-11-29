@@ -277,17 +277,15 @@ function renderGraph(nodes, edges) {
         })();
         const displayLabel = `${icon} ${n.label}`;
         return {
-        data: {
-          id: n.id,
-          label: displayLabel,
-          type: n.type,
-          isSubject: !!n.isSubject,
-          isFlagged: !!n.isFlagged,
-        },
-      };
+          data: {
+            id: n.id,
+            label: displayLabel,
+            type: n.type,
+            isSubject: !!n.isSubject,
+            isFlagged: !!n.isFlagged,
+          },
+        };
       }),
-        },
-      })),
       ...edges.map((e, idx) => ({
         data: {
           id: `e-${idx}-${e.source}-${e.target}`,
