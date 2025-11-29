@@ -266,12 +266,26 @@ function renderGraph(nodes, edges) {
   const cy = cytoscape({
     container: graphContainer,
     elements: [
-      ...nodes.map((n) => ({
+      ...nodes.map((n) => {
+        const icon = (() => {
+          if (n.type === "Account") return "👤";
+          if (n.type === "Transaction") return "💸";
+          if (n.deviceType === "Email") return "📧";
+          if (n.deviceType === "Phone") return "📱";
+          if (n.deviceType === "SSN") return "🪪";
+          return "🔗";
+        })();
+        const displayLabel = `${icon} ${n.label}`;
+        return {
         data: {
           id: n.id,
-          label: n.label,
+          label: displayLabel,
           type: n.type,
           isSubject: !!n.isSubject,
+          isFlagged: !!n.isFlagged,
+        },
+      };
+      }),
         },
       })),
       ...edges.map((e, idx) => ({
@@ -322,10 +336,6 @@ function renderGraph(nodes, edges) {
         style: { "background-color": "#ffd166", shape: "round-rectangle" },
       },
       {
-        selector: "node[?isSubject]",
-        style: { "background-color": "#ff8c42", "border-width": 2 },
-      },
-      {
         selector: "node[?isFlagged]",
         style: {
           "background-color": "#e63946",
@@ -335,6 +345,10 @@ function renderGraph(nodes, edges) {
           "text-outline-color": "#8b1b1b",
           "text-outline-width": 2,
         },
+      },
+      {
+        selector: "node[?isSubject]",
+        style: { "background-color": "#ff8c42", "border-width": 2 },
       },
       {
         selector: "edge",
