@@ -58,16 +58,13 @@ def main():
         return
 
     print(f"Starting Telegram agent. Polling {endpoint} every {interval}s")
-    last_sig = None
     while True:
         try:
             alerts = fetch_top(endpoint)
-            sig = tuple((a.get("ruleKey"), a.get("id")) for a in alerts)
-            if sig != last_sig and alerts:
+            if alerts:
                 body = "\n".join(format_alert(a) for a in alerts)
                 msg = f"🔍 Search & Destroy (unflagged suspects)\n{body}"
                 send_message(token, chat_id, msg)
-                last_sig = sig
         except Exception as exc:
             print(f"Agent error: {exc}")
         time.sleep(interval)
