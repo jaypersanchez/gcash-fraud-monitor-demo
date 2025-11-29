@@ -295,7 +295,7 @@ function renderGraph(nodes, edges) {
         style: { "background-color": "#ffd166" },
       },
       {
-        selector: "node[isSubject = 1]",
+        selector: "node[?isSubject]",
         style: { "background-color": "#ff8c42", "border-width": 2 },
       },
       {
