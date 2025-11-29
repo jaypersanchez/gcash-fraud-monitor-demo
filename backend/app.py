@@ -17,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.config import Config
 from backend.db.session import engine, get_session
 from backend.models import Base, RuleDefinition, Account, Device
+from backend.models.investigator_action import InvestigatorAction
 from backend.routes.alerts import alerts_bp
 from backend.routes.cases import cases_bp
 from backend.routes.rules import rules_bp
@@ -31,6 +32,23 @@ driver = None
 if all([NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD]):
     driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
+
+def is_locally_flagged(anchor_id: str, anchor_type: str) -> bool:
+    session = get_session()
+    try:
+        exists = (
+            session.query(InvestigatorAction)
+            .filter(
+                InvestigatorAction.anchor_id == anchor_id,
+                InvestigatorAction.anchor_type == anchor_type,
+                InvestigatorAction.action == "FLAG",
+            )
+            .first()
+            is not None
+        )
+        return exists
+    finally:
+        session.close()
 
 def fetch_account_alerts(tx, min_risk: float):
     """
@@ -382,22 +400,29 @@ def create_app():
             min_risky = 3
         try:
             limit = int(request.args.get("limit", 20))
-        except Exception:
-            limit = 20
+    except Exception:
+        limit = 20
+    exclude_flagged = str(request.args.get("excludeFlagged", "false")).lower() == "true"
 
-        alerts = []
-        with driver.session() as session:
-            r1 = session.execute_read(fetch_account_alerts_r1, risk_threshold, limit)
-            r2 = session.execute_read(fetch_device_alerts_r2, high_risk, min_risky, limit)
-            r3 = session.execute_read(fetch_mule_ring_alerts_r3, min_risky, limit)
-            r7 = session.execute_read(fetch_hub_alerts_r7, risk_threshold, min_risky, limit)
+    alerts = []
+    with driver.session() as session:
+        r1 = session.execute_read(fetch_account_alerts_r1, risk_threshold, limit)
+        r2 = session.execute_read(fetch_device_alerts_r2, high_risk, min_risky, limit)
+        r3 = session.execute_read(fetch_mule_ring_alerts_r3, min_risky, limit)
+        r7 = session.execute_read(fetch_hub_alerts_r7, risk_threshold, min_risky, limit)
 
-        def is_flagged(rec):
-            return str(rec.get("isFraud")).lower() == "true"
+        def is_flagged(rec, anchor_type):
+            anchor_id = (
+                rec.get("accountId")
+                or rec.get("deviceId")
+            )
+            if not anchor_id:
+                return False
+            return is_locally_flagged(anchor_id, anchor_type)
 
         # R1
         for idx, rec in enumerate(r1, start=1):
-            if is_flagged(rec):
+            if exclude_flagged and is_flagged(rec, "ACCOUNT"):
                 continue
             risk = rec.get("riskScore") or 0
             if risk >= 0.95:
@@ -426,6 +451,8 @@ def create_app():
             risky = rec.get("riskyAccounts") or 0
             total = rec.get("totalAccounts") or 0
             severity = "High" if risky >= 3 else "Medium"
+            if exclude_flagged and is_flagged(rec, "DEVICE"):
+                continue
             summary = f"Identifier {rec.get('deviceId')} ({rec.get('deviceType')}) linked to {risky} risky / {total} total accounts"
             alerts.append(
                 {
@@ -444,7 +471,7 @@ def create_app():
             )
         # R3
         for idx, rec in enumerate(r3, start=1):
-            if is_flagged(rec):
+            if exclude_flagged and is_flagged(rec, "ACCOUNT"):
                 continue
             ring_size = rec.get("ringSize") or 0
             risk = rec.get("riskScore") or 0
@@ -467,7 +494,7 @@ def create_app():
             )
         # R7
         for idx, rec in enumerate(r7, start=1):
-            if is_flagged(rec):
+            if exclude_flagged and is_flagged(rec, "ACCOUNT"):
                 continue
             risky = rec.get("riskySenders") or 0
             tx_count = rec.get("txCount") or 0

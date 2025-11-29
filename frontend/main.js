@@ -14,6 +14,7 @@ const limitInput = document.getElementById("limitInput");
 const riskValue = document.getElementById("riskValue");
 const ruleSelect = document.getElementById("ruleSelect");
 const minRiskyInput = document.getElementById("minRisky");
+const hideFlaggedCheckbox = document.getElementById("hideFlagged");
 const selectionInfo = document.getElementById("selection-info");
 const flagAccountBtn = document.getElementById("flag-account");
 const flagDeviceBtn = document.getElementById("flag-device");
@@ -91,6 +92,9 @@ async function fetchAlerts() {
       params.append("minRiskyAccounts", getMinRisky());
     }
     params.append("limit", getLimit());
+    if (rule === "ALL") {
+      params.append("excludeFlagged", hideFlaggedCheckbox && hideFlaggedCheckbox.checked ? "true" : "false");
+    }
     lastParams = params.toString();
     let endpoint = "/neo-alerts/r1";
     if (rule === "R2") endpoint = "/neo-alerts/r2";
@@ -473,6 +477,13 @@ if (ruleSelect) {
     selectedDeviceId = null;
     selectedRuleKey = null;
     fetchAlerts();
+  });
+}
+if (hideFlaggedCheckbox) {
+  hideFlaggedCheckbox.addEventListener("change", () => {
+    if (getRule() === "ALL") {
+      fetchAlerts();
+    }
   });
 }
 
