@@ -1,5 +1,8 @@
 import os
 import sys
+import uuid
+import tempfile
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, jsonify, request
@@ -58,6 +61,231 @@ def is_flagged_record(rec: dict, anchor_type: str) -> bool:
     if str(rec.get("isFraud")).lower() == "true":
         return True
     return is_locally_flagged(anchor_id, anchor_type)
+
+
+def _detect_flag(obj: dict, labels=None) -> bool:
+    labels = labels or []
+    if "Mule" in labels:
+        return True
+    if obj.get("fraud_group") is not None:
+        return True
+    if obj.get("flagged"):
+        return True
+    val = obj.get("is_fraud")
+    if isinstance(val, str):
+        val = val.lower() in {"true", "1", "yes"}
+    return bool(val)
+
+
+def _graph_for_account(account_id: str):
+    cypher = """
+    MATCH (a)
+    WHERE (a:Account AND a.account_number = $accountId)
+       OR (a:Mule AND a.id = $accountId)
+       OR (a:Client AND a.id = $accountId)
+    OPTIONAL MATCH (a)-[:HAS_EMAIL|HAS_PHONE|HAS_SSN]->(id)<-[:HAS_EMAIL|HAS_PHONE|HAS_SSN]-(peer)
+    OPTIONAL MATCH (a)-[:PERFORMED]->(txOut:Transaction)-[:TO]->(dst)
+    OPTIONAL MATCH (src)-[:PERFORMED]->(txIn:Transaction)-[:TO]->(a)
+    RETURN a, labels(a) AS a_labels,
+           collect(DISTINCT id) AS identifiers,
+           collect(DISTINCT {idNode:id, peer:peer, peerLabels:labels(peer)}) AS idPeers,
+           collect(DISTINCT {tx:txOut, other:dst, otherLabels:labels(dst), direction:'OUT'}) AS outbound,
+           collect(DISTINCT {tx:txIn, other:src, otherLabels:labels(src), direction:'IN'}) AS inbound
+    """
+    nodes = {}
+    edges = []
+
+    def add_node(key, label, ntype, extra=None):
+        if key in nodes:
+            return
+        node = {"id": key, "label": label, "type": ntype}
+        if extra:
+            node.update(extra)
+        nodes[key] = node
+
+    with driver.session() as session:
+        record = session.run(cypher, accountId=account_id).single()
+        if not record:
+            return {"nodes": [], "edges": []}
+        a = record["a"]
+        anchor_id = a.get("account_number") or a.get("id")
+        anchor_label = a.get("customer_name") or a.get("name") or anchor_id
+        flagged_anchor = _detect_flag(a, record.get("a_labels") or [])
+        add_node(anchor_id, anchor_label, "Account", {"customerName": anchor_label, "isSubject": True, "isFlagged": flagged_anchor})
+
+        identifiers = record.get("identifiers") or []
+        for id_node in identifiers:
+            device_id = id_node.get("device_id") or id_node.get("email") or id_node.get("phoneNumber") or id_node.get("ssn")
+            if not device_id:
+                continue
+            dev_type = "Device"
+            if "email" in id_node:
+                dev_type = "Email"
+            elif "phoneNumber" in id_node:
+                dev_type = "Phone"
+            elif "ssn" in id_node:
+                dev_type = "SSN"
+            flagged_id = _detect_flag(id_node)
+            add_node(device_id, device_id, "Device", {"deviceType": dev_type, "isFlagged": flagged_id})
+            edges.append({"source": anchor_id, "target": device_id, "type": "HAS_IDENTIFIER"})
+
+        id_peers = record.get("idPeers") or []
+        for entry in id_peers:
+            id_node = entry.get("idNode") or {}
+            peer = entry.get("peer") or {}
+            peer_labels = entry.get("peerLabels") or []
+            device_id = id_node.get("device_id") or id_node.get("email") or id_node.get("phoneNumber") or id_node.get("ssn")
+            peer_id = peer.get("account_number") or peer.get("id")
+            if not device_id or not peer_id:
+                continue
+            peer_label = peer.get("customer_name") or peer.get("name") or peer_id
+            flagged_peer = _detect_flag(peer, peer_labels)
+            add_node(peer_id, peer_label, "Account", {"customerName": peer_label, "isFlagged": flagged_peer})
+            add_node(device_id, device_id, "Device", {"deviceType": "Identifier", "isFlagged": _detect_flag(id_node)})
+            edges.append({"source": peer_id, "target": device_id, "type": "HAS_IDENTIFIER"})
+
+        def handle_tx(items):
+            for item in items or []:
+                tx = item.get("tx")
+                other = item.get("other")
+                other_labels = item.get("otherLabels") or []
+                direction = item.get("direction")
+                if not tx or not other:
+                    continue
+                tx_ref = tx.get("tx_ref") or tx.get("id")
+                add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
+                other_id = other.get("account_number") or other.get("id")
+                other_label = other.get("customer_name") or other.get("name") or other_id
+                flagged_other = _detect_flag(other, other_labels)
+                add_node(other_id, other_label, "Account", {"customerName": other_label, "isFlagged": flagged_other})
+                if direction == "OUT":
+                    edges.append({"source": anchor_id, "target": tx_ref, "type": "PERFORMS"})
+                    edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
+                else:
+                    edges.append({"source": other_id, "target": tx_ref, "type": "PERFORMS"})
+                    edges.append({"source": tx_ref, "target": anchor_id, "type": "TO"})
+
+        handle_tx(record.get("outbound"))
+        handle_tx(record.get("inbound"))
+
+    return {"nodes": list(nodes.values()), "edges": edges}
+
+
+def _graph_for_identifier(identifier: str):
+    cypher = """
+    MATCH (id)
+    WHERE (id:Email AND id.email = $identifier)
+       OR (id:Phone AND id.phoneNumber = $identifier)
+       OR (id:SSN AND id.ssn = $identifier)
+    OPTIONAL MATCH (id)<-[:HAS_EMAIL|HAS_PHONE|HAS_SSN]-(acc)
+    OPTIONAL MATCH (acc)-[:PERFORMED]->(txOut:Transaction)-[:TO]->(dst)
+    OPTIONAL MATCH (src)-[:PERFORMED]->(txIn:Transaction)-[:TO]->(acc)
+    RETURN id,
+           collect(DISTINCT {acc: acc, accLabels: labels(acc)}) AS accounts,
+           collect(DISTINCT {tx: txOut, other: dst, otherLabels: labels(dst), direction: 'OUT', acc: acc, accLabels: labels(acc)}) AS outbound,
+           collect(DISTINCT {tx: txIn, other: src, otherLabels: labels(src), direction: 'IN', acc: acc, accLabels: labels(acc)}) AS inbound
+    """
+    nodes = {}
+    edges = []
+
+    def add_node(key, label, ntype, extra=None):
+        if key in nodes:
+            return
+        node = {"id": key, "label": label, "type": ntype}
+        if extra:
+            node.update(extra)
+        nodes[key] = node
+
+    with driver.session() as session:
+        record = session.run(cypher, identifier=identifier).single()
+        if not record:
+            return {"nodes": [], "edges": []}
+
+        id_node = record["id"]
+        device_id_val = id_node.get("device_id") or id_node.get("email") or id_node.get("phoneNumber") or id_node.get("ssn")
+        device_type = "Device"
+        if "email" in id_node:
+            device_type = "Email"
+        elif "phoneNumber" in id_node:
+            device_type = "Phone"
+        elif "ssn" in id_node:
+            device_type = "SSN"
+        flagged_id = _detect_flag(id_node)
+        add_node(device_id_val, device_id_val, "Device", {"deviceType": device_type, "isSubject": True, "isFlagged": flagged_id})
+
+        for acc_entry in record.get("accounts") or []:
+            acc = acc_entry.get("acc") or {}
+            acc_labels = acc_entry.get("accLabels") or []
+            acc_id = acc.get("account_number") or acc.get("id")
+            acc_label = acc.get("customer_name") or acc.get("name") or acc_id
+            flagged_acc = _detect_flag(acc, acc_labels)
+            add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
+            edges.append({"source": acc_id, "target": device_id_val, "type": "HAS_IDENTIFIER"})
+
+        def handle_tx(items):
+            for item in items or []:
+                tx = item.get("tx")
+                other = item.get("other")
+                acc = item.get("acc")
+                acc_labels = item.get("accLabels") or []
+                direction = item.get("direction")
+                if not tx or not other or not acc:
+                    continue
+                tx_ref = tx.get("tx_ref") or tx.get("id")
+                add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
+                other_id = other.get("account_number") or other.get("id")
+                other_label = other.get("customer_name") or other.get("name") or other_id
+                acc_id = acc.get("account_number") or acc.get("id")
+                acc_label = acc.get("customer_name") or acc.get("name") or acc_id
+                flagged_acc = _detect_flag(acc, acc_labels)
+                add_node(other_id, other_label, "Account", {"customerName": other_label})
+                add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
+                if direction == "OUT":
+                    edges.append({"source": acc_id, "target": tx_ref, "type": "PERFORMS"})
+                    edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
+                else:
+                    edges.append({"source": other_id, "target": tx_ref, "type": "PERFORMS"})
+                    edges.append({"source": tx_ref, "target": acc_id, "type": "TO"})
+
+        handle_tx(record.get("outbound"))
+        handle_tx(record.get("inbound"))
+
+    return {"nodes": list(nodes.values()), "edges": edges}
+
+
+def _render_dot_png(nodes, edges):
+    """Render a simple graph PNG using graphviz dot if available."""
+    dot_lines = ["digraph G {", 'rankdir="LR";', 'node [style=filled,fontname="Arial"];']
+    for n in nodes:
+        color = "#6ba7ff" if n.get("type") == "Account" else "#6adedc" if n.get("type") == "Device" else "#ffd166"
+        if n.get("isFlagged"):
+            color = "#e63946"
+        if n.get("isSubject"):
+            color = "#ff8c42"
+        shape = "ellipse"
+        if n.get("type") == "Device":
+            shape = "diamond"
+        if n.get("type") == "Transaction":
+            shape = "box"
+        label = n.get("label") or n.get("id")
+        dot_lines.append(f'"{n["id"]}" [label="{label}", color="#0c1a36", fillcolor="{color}", shape="{shape}"];')
+    for e in edges:
+        lbl = e.get("type") or ""
+        dot_lines.append(f'"{e["source"]}" -> "{e["target"]}" [label="{lbl}", color="#a5b4d0"];')
+    dot_lines.append("}")
+    dot_src = "\n".join(dot_lines)
+    tmpdir = Path(tempfile.gettempdir()) / "gcash_graphs"
+    tmpdir.mkdir(parents=True, exist_ok=True)
+    png_path = tmpdir / f"{uuid.uuid4().hex}.png"
+    try:
+        proc = subprocess.run(["dot", "-Tpng"], input=dot_src.encode("utf-8"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        with open(png_path, "wb") as f:
+            f.write(proc.stdout)
+        return str(png_path)
+    except Exception as exc:
+        print(f"dot render failed: {exc}")
+        return None
+
 
 def is_flagged_record(rec: dict, anchor_type: str) -> bool:
     anchor_id = rec.get("accountId") or rec.get("deviceId")
@@ -537,6 +765,58 @@ def create_app():
                 }
             )
         return jsonify(alerts)
+
+    @app.route("/api/ai-agent/assess", methods=["POST"])
+    def ai_agent_assess():
+        payload = request.get_json(force=True) or {}
+        rule_key = payload.get("ruleKey") or payload.get("rule") or "R1"
+        anchor = payload.get("anchor") or payload.get("accountId") or payload.get("deviceId")
+        if not anchor:
+            return jsonify({"status": "error", "message": "Missing anchor"}), 400
+        graph = _graph_for_identifier(anchor) if rule_key == "R2" else _graph_for_account(anchor)
+        png_path = _render_dot_png(graph["nodes"], graph["edges"])
+
+        openai_key = os.getenv("OPENAI_API_KEY")
+        assessment = "OpenAI key not configured; no assessment generated."
+        if openai_key:
+            try:
+                import requests as req
+
+                prompt = f"Assess this fraud case. Rule={rule_key}, Anchor={anchor}. Nodes: {len(graph['nodes'])}, Edges: {len(graph['edges'])}. Flagged nodes may indicate known fraud. Provide a concise risk assessment and next action."
+                resp = req.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {openai_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "gpt-4o",
+                        "messages": [
+                            {"role": "system", "content": "You are a fraud analyst. Be concise."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": 180,
+                    },
+                    timeout=15,
+                )
+                if resp.ok:
+                    data = resp.json()
+                    assessment = data["choices"][0]["message"]["content"]
+                else:
+                    assessment = f"OpenAI error: {resp.text}"
+            except Exception as exc:
+                assessment = f"OpenAI call failed: {exc}"
+
+        return jsonify(
+            {
+                "status": "ok",
+                "assessment": assessment,
+                "image_path": png_path,
+                "ruleKey": rule_key,
+                "anchor": anchor,
+                "graph": graph,
+            }
+        )
 
     @app.route("/api/ai-agent/top", methods=["GET"])
     def ai_agent_top():
