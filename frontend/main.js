@@ -38,6 +38,7 @@ const caseEscalateBtn = document.getElementById("case-escalate");
 let alertsCache = [];
 let selectedAccountId = null;
 let selectedDeviceId = null;
+let selectedAnchorType = "ACCOUNT";
 let lastParams = "";
 let selectedRuleKey = null;
 let selectedAlert = null;
@@ -112,9 +113,11 @@ async function fetchAlerts() {
       if (anchorRule === "R2") {
         selectedDeviceId = first.deviceId;
         selectedAccountId = null;
+        selectedAnchorType = "DEVICE";
       } else {
         selectedAccountId = first.accountId;
         selectedDeviceId = null;
+        selectedAnchorType = "ACCOUNT";
       }
       updateSelectionInfo();
       renderContext();
@@ -149,14 +152,17 @@ function renderAlerts(alerts) {
       if (rowRule === "R1" || rowRule === "R3" || rowRule === "R7") {
         selectedAccountId = alert.accountId;
         selectedDeviceId = null;
+        selectedAnchorType = "ACCOUNT";
         if (neoStatus) neoStatus.textContent = `Selected account ${alert.accountId} (${rowRule})`;
       } else if (rowRule === "R2") {
         selectedDeviceId = alert.deviceId;
         selectedAccountId = null;
+        selectedAnchorType = "DEVICE";
         if (neoStatus) neoStatus.textContent = `Selected identifier ${alert.deviceId} (${rowRule})`;
       } else {
         selectedAccountId = alert.accountId;
         selectedDeviceId = null;
+        selectedAnchorType = "ACCOUNT";
         if (neoStatus) neoStatus.textContent = `Selected account ${alert.accountId} (${rowRule})`;
       }
       selectedRuleKey = rowRule;
@@ -220,7 +226,7 @@ async function loadGraphForSelected() {
   const ruleLabel = selectedRuleKey || rule;
   const accountId = selectedAccountId || (alertsCache[0] && alertsCache[0].accountId);
   const deviceId = selectedDeviceId || (alertsCache[0] && alertsCache[0].deviceId);
-  const anchor = ruleLabel === "R2" ? deviceId : accountId;
+  const anchor = selectedAnchorType === "DEVICE" ? deviceId : accountId;
   if (!anchor) {
     if (neoStatus) neoStatus.textContent = "No anchor found on alert.";
     return;
@@ -228,7 +234,7 @@ async function loadGraphForSelected() {
   const paramsDisplay = lastParams ? ` (filters: ${lastParams})` : "";
   neoStatus.textContent = `Loading graph for ${anchor} (${ruleLabel})${paramsDisplay}...`;
   try {
-    const endpoint = ruleLabel === "R2" ? "/neo4j/graph/identifier/" : "/neo4j/graph/account/";
+    const endpoint = selectedAnchorType === "DEVICE" ? "/neo4j/graph/identifier/" : "/neo4j/graph/account/";
     const res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
     const data = await res.json();
     if (!res.ok) {
@@ -403,6 +409,7 @@ function renderGraph(nodes, edges) {
     // Only drill into 13+ digit account-like IDs; skip banks/merchants/etc.
     const looksLikeAccount = node.type === "Account" && /^[0-9]{13,}$/.test(node.id);
     const looksLikeDevice = node.type === "Device";
+    selectedAnchorType = looksLikeDevice ? "DEVICE" : "ACCOUNT";
     focusNode(evt.target);
     if (looksLikeAccount) {
       selectedAccountId = node.id;
@@ -499,9 +506,9 @@ if (hideFlaggedCheckbox) {
 
 function updateSelectionInfo() {
   const ruleLabel = selectedRuleKey || getRule();
-  const anchor = ruleLabel === "R2" ? selectedDeviceId : selectedAccountId;
+  const anchor = selectedAnchorType === "DEVICE" ? selectedDeviceId : selectedAccountId;
   if (selectionInfo) {
-    const noun = ruleLabel === "R2" ? "identifier" : "account";
+    const noun = selectedAnchorType === "DEVICE" ? "identifier" : "account";
     selectionInfo.textContent = anchor ? `Selected ${noun} ${anchor} (${ruleLabel})` : "No selection yet.";
   }
   renderContext();
