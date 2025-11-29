@@ -110,10 +110,11 @@ def neo4j_graph_account(account_id: str):
     OPTIONAL MATCH (a)-[:PERFORMED]->(txOut:Transaction)-[:TO]->(dst)
     OPTIONAL MATCH (src)-[:PERFORMED]->(txIn:Transaction)-[:TO]->(a)
     RETURN a,
+           labels(a) AS a_labels,
            collect(DISTINCT id) AS identifiers,
-           collect(DISTINCT {idNode: id, peer: peer}) AS idPeers,
-           collect(DISTINCT {tx: txOut, other: dst, direction: 'OUT'}) AS outbound,
-           collect(DISTINCT {tx: txIn, other: src, direction: 'IN'}) AS inbound
+           collect(DISTINCT {idNode: id, peer: peer, peerLabels: labels(peer)}) AS idPeers,
+           collect(DISTINCT {tx: txOut, other: dst, otherLabels: labels(dst), direction: 'OUT'}) AS outbound,
+           collect(DISTINCT {tx: txIn, other: src, otherLabels: labels(src), direction: 'IN'}) AS inbound
     """
     with get_driver() as driver:
         with driver.session() as session:
@@ -135,7 +136,9 @@ def neo4j_graph_account(account_id: str):
             a = record["a"]
             anchor_id = a.get("account_number") or a.get("id")
             anchor_label = a.get("customer_name") or a.get("name") or anchor_id
-            add_node(anchor_id, anchor_label, "Account", {"customerName": anchor_label, "isSubject": True})
+            anchor_labels = record.get("a_labels") or []
+            flagged_anchor = "Mule" in anchor_labels or a.get("fraud_group") is not None
+            add_node(anchor_id, anchor_label, "Account", {"customerName": anchor_label, "isSubject": True, "isFlagged": flagged_anchor})
 
             identifiers = record.get("identifiers") or []
             for id_node in identifiers:
@@ -156,12 +159,14 @@ def neo4j_graph_account(account_id: str):
             for entry in id_peers:
                 id_node = entry.get("idNode") or {}
                 peer = entry.get("peer") or {}
+                peer_labels = entry.get("peerLabels") or []
                 device_id = id_node.get("device_id") or id_node.get("email") or id_node.get("phoneNumber") or id_node.get("ssn")
                 peer_id = peer.get("account_number") or peer.get("id")
                 if not device_id or not peer_id:
                     continue
                 peer_label = peer.get("customer_name") or peer.get("name") or peer_id
-                add_node(peer_id, peer_label, "Account", {"customerName": peer_label})
+                flagged_peer = "Mule" in peer_labels or peer.get("fraud_group") is not None
+                add_node(peer_id, peer_label, "Account", {"customerName": peer_label, "isFlagged": flagged_peer})
                 add_node(device_id, device_id, "Device", {"deviceType": "Identifier"})
                 edges.append({"source": peer_id, "target": device_id, "type": "HAS_IDENTIFIER"})
 
@@ -169,6 +174,7 @@ def neo4j_graph_account(account_id: str):
                 for item in items or []:
                     tx = item.get("tx")
                     other = item.get("other")
+                    other_labels = item.get("otherLabels") or []
                     direction = item.get("direction")
                     if not tx or not other:
                         continue
@@ -176,7 +182,8 @@ def neo4j_graph_account(account_id: str):
                     add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
                     other_id = other.get("account_number") or other.get("id")
                     other_label = other.get("customer_name") or other.get("name") or other_id
-                    add_node(other_id, other_label, "Account", {"customerName": other_label})
+                    flagged_other = "Mule" in other_labels or other.get("fraud_group") is not None
+                    add_node(other_id, other_label, "Account", {"customerName": other_label, "isFlagged": flagged_other})
                     if direction == "OUT":
                         edges.append({"source": anchor_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
                         edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
@@ -222,9 +229,9 @@ def neo4j_graph_device(device_id: str):
     OPTIONAL MATCH (a)-[:PERFORMED]->(txOut:Transaction)-[:TO]->(dst)
     OPTIONAL MATCH (src)-[:PERFORMED]->(txIn:Transaction)-[:TO]->(a)
     RETURN id,
-           collect(DISTINCT a) AS accounts,
-           collect(DISTINCT {tx: txOut, other: dst, direction: 'OUT', acc: a}) AS outbound,
-           collect(DISTINCT {tx: txIn, other: src, direction: 'IN', acc: a}) AS inbound
+           collect(DISTINCT {acc: a, accLabels: labels(a)}) AS accounts,
+           collect(DISTINCT {tx: txOut, other: dst, otherLabels: labels(dst), direction: 'OUT', acc: a, accLabels: labels(a)}) AS outbound,
+           collect(DISTINCT {tx: txIn, other: src, otherLabels: labels(src), direction: 'IN', acc: a, accLabels: labels(a)}) AS inbound
     """
     with get_driver() as driver:
         with driver.session() as session:
@@ -254,10 +261,13 @@ def neo4j_graph_device(device_id: str):
                 device_type = "SSN"
             add_node(device_id_val, device_id_val, "Device", {"deviceType": device_type, "isSubject": True})
 
-            for acc in record["accounts"] or []:
+            for acc_entry in record["accounts"] or []:
+                acc = acc_entry.get("acc") or {}
+                acc_labels = acc_entry.get("accLabels") or []
                 acc_id = acc.get("account_number") or acc.get("id")
                 acc_label = acc.get("customer_name") or acc.get("name") or acc_id
-                add_node(acc_id, acc_label, "Account", {"customerName": acc_label})
+                flagged_acc = "Mule" in acc_labels or acc.get("fraud_group") is not None
+                add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
                 edges.append({"source": acc_id, "target": device_id_val, "type": "HAS_IDENTIFIER"})
 
             def handle_tx(items):
@@ -265,6 +275,7 @@ def neo4j_graph_device(device_id: str):
                     tx = item.get("tx")
                     other = item.get("other")
                     acc = item.get("acc")
+                    acc_labels = item.get("accLabels") or []
                     direction = item.get("direction")
                     if not tx or not other or not acc:
                         continue
@@ -274,8 +285,9 @@ def neo4j_graph_device(device_id: str):
                     other_label = other.get("customer_name") or other.get("name") or other_id
                     acc_id = acc.get("account_number") or acc.get("id")
                     acc_label = acc.get("customer_name") or acc.get("name") or acc_id
+                    flagged_acc = "Mule" in acc_labels or acc.get("fraud_group") is not None
                     add_node(other_id, other_label, "Account", {"customerName": other_label})
-                    add_node(acc_id, acc_label, "Account", {"customerName": acc_label})
+                    add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
                     if direction == "OUT":
                         edges.append({"source": acc_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
                         edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
@@ -309,9 +321,9 @@ def neo4j_graph_identifier(identifier: str):
     OPTIONAL MATCH (acc)-[:PERFORMED]->(txOut:Transaction)-[:TO]->(dst)
     OPTIONAL MATCH (src)-[:PERFORMED]->(txIn:Transaction)-[:TO]->(acc)
     RETURN id,
-           collect(DISTINCT acc) AS accounts,
-           collect(DISTINCT {tx: txOut, other: dst, direction: 'OUT', acc: acc}) AS outbound,
-           collect(DISTINCT {tx: txIn, other: src, direction: 'IN', acc: acc}) AS inbound
+           collect(DISTINCT {acc: acc, accLabels: labels(acc)}) AS accounts,
+           collect(DISTINCT {tx: txOut, other: dst, otherLabels: labels(dst), direction: 'OUT', acc: acc, accLabels: labels(acc)}) AS outbound,
+           collect(DISTINCT {tx: txIn, other: src, otherLabels: labels(src), direction: 'IN', acc: acc, accLabels: labels(acc)}) AS inbound
     """
     with get_driver() as driver:
         with driver.session() as session:
@@ -341,10 +353,13 @@ def neo4j_graph_identifier(identifier: str):
                 device_type = "SSN"
             add_node(device_id_val, device_id_val, "Device", {"deviceType": device_type, "isSubject": True})
 
-            for acc in record.get("accounts") or []:
+            for acc_entry in record.get("accounts") or []:
+                acc = acc_entry.get("acc") or {}
+                acc_labels = acc_entry.get("accLabels") or []
                 acc_id = acc.get("account_number") or acc.get("id")
                 acc_label = acc.get("customer_name") or acc.get("name") or acc_id
-                add_node(acc_id, acc_label, "Account", {"customerName": acc_label})
+                flagged_acc = "Mule" in acc_labels or acc.get("fraud_group") is not None
+                add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
                 edges.append({"source": acc_id, "target": device_id_val, "type": "HAS_IDENTIFIER"})
 
             def handle_tx(items):
@@ -352,6 +367,7 @@ def neo4j_graph_identifier(identifier: str):
                     tx = item.get("tx")
                     other = item.get("other")
                     acc = item.get("acc")
+                    acc_labels = item.get("accLabels") or []
                     direction = item.get("direction")
                     if not tx or not other or not acc:
                         continue
@@ -361,8 +377,9 @@ def neo4j_graph_identifier(identifier: str):
                     other_label = other.get("customer_name") or other.get("name") or other_id
                     acc_id = acc.get("account_number") or acc.get("id")
                     acc_label = acc.get("customer_name") or acc.get("name") or acc_id
+                    flagged_acc = "Mule" in acc_labels or acc.get("fraud_group") is not None
                     add_node(other_id, other_label, "Account", {"customerName": other_label})
-                    add_node(acc_id, acc_label, "Account", {"customerName": acc_label})
+                    add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
                     if direction == "OUT":
                         edges.append({"source": acc_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
                         edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
