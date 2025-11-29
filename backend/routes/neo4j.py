@@ -50,6 +50,18 @@ def _flagged_map(anchor_ids, anchor_type: str):
         session.close()
 
 
+def _is_flagged(node: dict, labels=None):
+    labels = labels or []
+    if "Mule" in labels:
+        return True
+    if node.get("fraud_group") is not None:
+        return True
+    val = node.get("is_fraud")
+    if isinstance(val, str):
+        val = val.lower() in {"true", "1", "yes"}
+    return bool(val)
+
+
 @neo4j_bp.route("/neo4j/flag/account/<account_id>", methods=["POST"])
 def neo4j_flag_account(account_id: str):
     # Persist flag in Postgres so we don't rely on mutating remote Neo4j
@@ -137,7 +149,7 @@ def neo4j_graph_account(account_id: str):
             anchor_id = a.get("account_number") or a.get("id")
             anchor_label = a.get("customer_name") or a.get("name") or anchor_id
             anchor_labels = record.get("a_labels") or []
-            flagged_anchor = "Mule" in anchor_labels or a.get("fraud_group") is not None
+            flagged_anchor = _is_flagged(a, anchor_labels)
             add_node(anchor_id, anchor_label, "Account", {"customerName": anchor_label, "isSubject": True, "isFlagged": flagged_anchor})
 
             identifiers = record.get("identifiers") or []
@@ -165,7 +177,7 @@ def neo4j_graph_account(account_id: str):
                 if not device_id or not peer_id:
                     continue
                 peer_label = peer.get("customer_name") or peer.get("name") or peer_id
-                flagged_peer = "Mule" in peer_labels or peer.get("fraud_group") is not None
+                flagged_peer = _is_flagged(peer, peer_labels)
                 add_node(peer_id, peer_label, "Account", {"customerName": peer_label, "isFlagged": flagged_peer})
                 add_node(device_id, device_id, "Device", {"deviceType": "Identifier"})
                 edges.append({"source": peer_id, "target": device_id, "type": "HAS_IDENTIFIER"})
@@ -182,7 +194,7 @@ def neo4j_graph_account(account_id: str):
                     add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
                     other_id = other.get("account_number") or other.get("id")
                     other_label = other.get("customer_name") or other.get("name") or other_id
-                    flagged_other = "Mule" in other_labels or other.get("fraud_group") is not None
+                    flagged_other = _is_flagged(other, other_labels)
                     add_node(other_id, other_label, "Account", {"customerName": other_label, "isFlagged": flagged_other})
                     if direction == "OUT":
                         edges.append({"source": anchor_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
@@ -266,7 +278,7 @@ def neo4j_graph_device(device_id: str):
                 acc_labels = acc_entry.get("accLabels") or []
                 acc_id = acc.get("account_number") or acc.get("id")
                 acc_label = acc.get("customer_name") or acc.get("name") or acc_id
-                flagged_acc = "Mule" in acc_labels or acc.get("fraud_group") is not None
+                flagged_acc = _is_flagged(acc, acc_labels)
                 add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
                 edges.append({"source": acc_id, "target": device_id_val, "type": "HAS_IDENTIFIER"})
 
@@ -285,7 +297,7 @@ def neo4j_graph_device(device_id: str):
                     other_label = other.get("customer_name") or other.get("name") or other_id
                     acc_id = acc.get("account_number") or acc.get("id")
                     acc_label = acc.get("customer_name") or acc.get("name") or acc_id
-                    flagged_acc = "Mule" in acc_labels or acc.get("fraud_group") is not None
+                    flagged_acc = _is_flagged(acc, acc_labels)
                     add_node(other_id, other_label, "Account", {"customerName": other_label})
                     add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
                     if direction == "OUT":
@@ -358,7 +370,7 @@ def neo4j_graph_identifier(identifier: str):
                 acc_labels = acc_entry.get("accLabels") or []
                 acc_id = acc.get("account_number") or acc.get("id")
                 acc_label = acc.get("customer_name") or acc.get("name") or acc_id
-                flagged_acc = "Mule" in acc_labels or acc.get("fraud_group") is not None
+                flagged_acc = _is_flagged(acc, acc_labels)
                 add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
                 edges.append({"source": acc_id, "target": device_id_val, "type": "HAS_IDENTIFIER"})
 
@@ -377,7 +389,7 @@ def neo4j_graph_identifier(identifier: str):
                     other_label = other.get("customer_name") or other.get("name") or other_id
                     acc_id = acc.get("account_number") or acc.get("id")
                     acc_label = acc.get("customer_name") or acc.get("name") or acc_id
-                    flagged_acc = "Mule" in acc_labels or acc.get("fraud_group") is not None
+                    flagged_acc = _is_flagged(acc, acc_labels)
                     add_node(other_id, other_label, "Account", {"customerName": other_label})
                     add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
                     if direction == "OUT":
