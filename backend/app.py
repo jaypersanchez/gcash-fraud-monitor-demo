@@ -799,6 +799,7 @@ def create_app():
                     },
                     timeout=15,
                 )
+                print(f"[AI-ASSESS] status={resp.status_code} body={resp.text[:500]}")
                 if resp.ok:
                     data = resp.json()
                     assessment = data["choices"][0]["message"]["content"]
