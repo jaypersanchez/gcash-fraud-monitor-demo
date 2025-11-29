@@ -382,27 +382,27 @@ def create_app():
             )
         return jsonify(alerts)
 
-    @app.route("/api/neo-alerts/search", methods=["GET"])
-    def neo4j_search_all_rules():
-        if not driver:
-            return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
-        try:
-            risk_threshold = float(request.args.get("riskThreshold", 0.8))
-        except Exception:
-            risk_threshold = 0.8
-        try:
-            high_risk = float(request.args.get("highRiskThreshold", 0.8))
-        except Exception:
-            high_risk = risk_threshold
-        try:
-            min_risky = int(request.args.get("minRiskyAccounts", 3))
-        except Exception:
-            min_risky = 3
-        try:
-            limit = int(request.args.get("limit", 20))
-        except Exception:
-            limit = 20
-        exclude_flagged = str(request.args.get("excludeFlagged", "false")).lower() == "true"
+@app.route("/api/neo-alerts/search", methods=["GET"])
+def neo4j_search_all_rules():
+    if not driver:
+        return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
+    try:
+        risk_threshold = float(request.args.get("riskThreshold", 0.8))
+    except Exception:
+        risk_threshold = 0.8
+    try:
+        high_risk = float(request.args.get("highRiskThreshold", 0.8))
+    except Exception:
+        high_risk = risk_threshold
+    try:
+        min_risky = int(request.args.get("minRiskyAccounts", 3))
+    except Exception:
+        min_risky = 3
+    try:
+        limit = int(request.args.get("limit", 20))
+    except Exception:
+        limit = 20
+    exclude_flagged = str(request.args.get("excludeFlagged", "false")).lower() == "true"
 
     alerts = []
     with driver.session() as session:
@@ -412,10 +412,7 @@ def create_app():
         r7 = session.execute_read(fetch_hub_alerts_r7, risk_threshold, min_risky, limit)
 
         def is_flagged(rec, anchor_type):
-            anchor_id = (
-                rec.get("accountId")
-                or rec.get("deviceId")
-            )
+            anchor_id = (rec.get("accountId") or rec.get("deviceId"))
             if not anchor_id:
                 return False
             return is_locally_flagged(anchor_id, anchor_type)
@@ -517,7 +514,7 @@ def create_app():
                     "created": datetime.utcnow().isoformat() + "Z",
                 }
             )
-        return jsonify(alerts)
+    return jsonify(alerts)
 
     @app.route("/api/db-health", methods=["GET"])
     def db_health():
