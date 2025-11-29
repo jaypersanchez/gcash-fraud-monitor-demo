@@ -247,6 +247,16 @@ function renderGraph(nodes, edges) {
   if (!graphContainer) return;
   if (!graphContainer || typeof cytoscape === "undefined") return;
 
+  const ruleLabel = selectedRuleKey || getRule();
+  const anchorId = ruleLabel === "R2" ? selectedDeviceId : selectedAccountId;
+
+  // Ensure anchor is marked as subject in case backend didn't tag it
+  if (anchorId) {
+    nodes = nodes.map((n) =>
+      n.id === anchorId ? { ...n, isSubject: true } : n
+    );
+  }
+
   if (!graphTooltip) {
     graphTooltip = document.createElement("div");
     graphTooltip.id = "graph-tooltip";
