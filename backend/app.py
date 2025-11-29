@@ -50,6 +50,14 @@ def is_locally_flagged(anchor_id: str, anchor_type: str) -> bool:
     finally:
         session.close()
 
+
+def is_flagged_record(rec: dict, anchor_type: str) -> bool:
+    anchor_id = rec.get("accountId") or rec.get("deviceId")
+    if not anchor_id:
+        return False
+    if str(rec.get("isFraud")).lower() == "true":
+        return True
+    return is_locally_flagged(anchor_id, anchor_type)
 def fetch_account_alerts(tx, min_risk: float):
     """
     Xavier data uses :Mule to represent flagged accounts.
@@ -237,6 +245,8 @@ def create_app():
             records = session.execute_read(fetch_account_alerts_r1, risk_threshold, limit)
         alerts = []
         for idx, rec in enumerate(records, start=1):
+            if not is_flagged_record(rec, "ACCOUNT"):
+                continue
             risk = rec.get("riskScore") or 0
             if risk >= 0.95:
                 severity = "Critical"
@@ -318,6 +328,8 @@ def create_app():
 
         alerts = []
         for idx, rec in enumerate(records, start=1):
+            if not is_flagged_record(rec, "ACCOUNT"):
+                continue
             ring_size = rec.get("ringSize") or 0
             risk = rec.get("riskScore") or 0
             severity = "Critical" if ring_size >= 5 else "High"
@@ -360,6 +372,8 @@ def create_app():
 
         alerts = []
         for idx, rec in enumerate(records, start=1):
+            if not is_flagged_record(rec, "ACCOUNT"):
+                continue
             risky = rec.get("riskySenders") or 0
             tx_count = rec.get("txCount") or 0
             risk = rec.get("riskScore") or 0
