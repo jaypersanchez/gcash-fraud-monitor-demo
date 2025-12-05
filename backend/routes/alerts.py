@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request, abort
 from sqlalchemy import select, case, desc
 
 from backend.db.session import get_session
-from backend.models import Alert, RuleDefinition, Case
+from backend.models import Alert, RuleDefinition, Case, Account
 from backend.services.rule_executor import refresh_alerts
 
 alerts_bp = Blueprint("alerts", __name__)
@@ -36,8 +36,9 @@ def list_alerts():
             else_=1,
         )
         query = (
-            select(Alert, RuleDefinition.name)
+            select(Alert, RuleDefinition.name, Account.account_number)
             .join(RuleDefinition, Alert.rule_id == RuleDefinition.id)
+            .join(Account, Alert.subject_account_id == Account.id, isouter=True)
             .order_by(desc(severity_order), Alert.created_at.desc())
         )
         if status_filter:
@@ -47,11 +48,13 @@ def list_alerts():
 
         results = session.execute(query).all()
         alerts = []
-        for alert, rule_name in results:
+        for alert, rule_name, account_number in results:
             alerts.append(
                 {
                     "id": alert.id,
                     "rule_name": rule_name,
+                    "ruleKey": rule_name,
+                    "accountId": account_number,
                     "severity": alert.severity,
                     "status": alert.status,
                     "summary": alert.summary,

@@ -22,6 +22,7 @@ const ruleSelect = document.getElementById("ruleSelect");
 const minRiskyInput = document.getElementById("minRisky");
 const hideFlaggedCheckbox = document.getElementById("hideFlagged");
 const includeTemporalCheckbox = document.getElementById("includeTemporal");
+const fafOnlyCheckbox = document.getElementById("fafOnly");
 const temporalNameInput = document.getElementById("temporalName");
 const temporalDurationInput = document.getElementById("temporalDuration");
 const temporalAmountInput = document.getElementById("temporalAmount");
@@ -101,6 +102,7 @@ function temporalParams() {
 async function fetchAlerts() {
   setLoadingState(true);
   const rule = getRule();
+  const fafOnly = fafOnlyCheckbox && fafOnlyCheckbox.checked;
   const isTemporalRule = rule === "R8" || rule === "R9" || rule === "R10" || (rule === "ALL" && includeTemporalCheckbox && includeTemporalCheckbox.checked);
   if (alertsStatus && isTemporalRule) {
     alertsStatus.textContent = "Running temporal query… this may take a few seconds for long paths.";
@@ -134,13 +136,19 @@ async function fetchAlerts() {
   }
   lastParams = params.toString();
   let endpoint = "/neo-alerts/r1";
-  if (rule === "R2") endpoint = "/neo-alerts/r2";
-  if (rule === "R3") endpoint = "/neo-alerts/r3";
-  if (rule === "R7") endpoint = "/neo-alerts/r7";
-  if (rule === "ALL") endpoint = "/neo-alerts/search";
-  if (rule === "R8") endpoint = "/neo-alerts/r8";
-  if (rule === "R9") endpoint = "/neo-alerts/r9";
-  if (rule === "R10") endpoint = "/neo-alerts/r10";
+  if (fafOnly) {
+    endpoint = "/alerts?family=FAF";
+    params.delete("riskThreshold");
+    params.delete("minRiskyAccounts");
+  } else {
+    if (rule === "R2") endpoint = "/neo-alerts/r2";
+    if (rule === "R3") endpoint = "/neo-alerts/r3";
+    if (rule === "R7") endpoint = "/neo-alerts/r7";
+    if (rule === "ALL") endpoint = "/neo-alerts/search";
+    if (rule === "R8") endpoint = "/neo-alerts/r8";
+    if (rule === "R9") endpoint = "/neo-alerts/r9";
+    if (rule === "R10") endpoint = "/neo-alerts/r10";
+  }
     const res = await fetch(`${API_BASE}${endpoint}?${params.toString()}`);
     const data = await res.json();
     renderAlerts(data);

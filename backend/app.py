@@ -1288,7 +1288,7 @@ def create_app():
                     "id": f"{rule_def.name}-{alert_obj.id}",
                     "accountId": acct.account_number,
                     "customerName": acct.customer_name,
-                    "severity": alert_obj.severity.title() if alert_obj.severity else "High",
+                    "severity": (alert_obj.severity or "HIGH").title(),
                     "summary": alert_obj.summary,
                 }
                 if exclude_flagged and is_flagged_record(rec, "ACCOUNT"):

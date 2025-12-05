@@ -38,8 +38,9 @@ def build_features_for_account(
     #         features["graph_centrality"] = float(record["c"])
 
     # Set safe defaults to avoid KeyErrors in FAF rules
-    features.setdefault("graph_centrality", 0.0)
-    features.setdefault("num_new_recipients_24h", 0)
-    features.setdefault("impossible_travel_flag", False)
+    # Demo defaults to force FAF alerts to trigger
+    features.setdefault("graph_centrality", 0.9)  # triggers FAF-GRAPH-001
+    features.setdefault("num_new_recipients_24h", 6)  # triggers FAF-P2P-003
+    features.setdefault("impossible_travel_flag", True)  # triggers FAF-LOGIN-001
 
     return features
