@@ -1,10 +1,16 @@
-const API_BASE = "http://localhost:5005/api";
+const urlParams = new URLSearchParams(window.location.search || "");
+const API_BASE =
+  urlParams.get("apiBase") ||
+  window.API_BASE ||
+  localStorage.getItem("API_BASE") ||
+  "http://localhost:5005/api";
 
 const alertsBody = document.getElementById("alerts-body");
 const alertsEmpty = document.getElementById("alerts-empty");
 const refreshBtn = document.getElementById("refresh-alerts");
 const alertsNav = document.getElementById("alerts-nav");
 const alertsSection = document.getElementById("alerts-section");
+const alertsStatus = document.getElementById("alerts-status");
 const neoTestButton = document.getElementById("neo-test");
 const neoStatus = document.getElementById("neo-status");
 const graphContainer = document.getElementById("graph-container");
@@ -15,6 +21,11 @@ const riskValue = document.getElementById("riskValue");
 const ruleSelect = document.getElementById("ruleSelect");
 const minRiskyInput = document.getElementById("minRisky");
 const hideFlaggedCheckbox = document.getElementById("hideFlagged");
+const includeTemporalCheckbox = document.getElementById("includeTemporal");
+const temporalNameInput = document.getElementById("temporalName");
+const temporalDurationInput = document.getElementById("temporalDuration");
+const temporalAmountInput = document.getElementById("temporalAmount");
+const temporalMinAmountInput = document.getElementById("temporalMinAmount");
 const selectionInfo = document.getElementById("selection-info");
 const flagAccountBtn = document.getElementById("flag-account");
 const flagDeviceBtn = document.getElementById("flag-device");
@@ -78,30 +89,58 @@ function getMinRisky() {
   return 2;
 }
 
+function temporalParams() {
+  return {
+    name: (temporalNameInput && temporalNameInput.value) || "Aubree David",
+    duration: temporalDurationInput ? parseInt(temporalDurationInput.value || "6500", 10) : 6500,
+    amount: temporalAmountInput ? parseFloat(temporalAmountInput.value || "50000") : 50000,
+    minAmount: temporalMinAmountInput ? parseFloat(temporalMinAmountInput.value || "1200000") : 1200000,
+  };
+}
+
 async function fetchAlerts() {
   setLoadingState(true);
+  const rule = getRule();
+  const isTemporalRule = rule === "R8" || rule === "R9" || rule === "R10" || (rule === "ALL" && includeTemporalCheckbox && includeTemporalCheckbox.checked);
+  if (alertsStatus && isTemporalRule) {
+    alertsStatus.textContent = "Running temporal query… this may take a few seconds for long paths.";
+  } else if (alertsStatus) {
+    alertsStatus.textContent = "";
+  }
   try {
     const params = new URLSearchParams();
-    const rule = getRule();
     if (rule === "R1") {
       params.append("riskThreshold", getRiskThreshold());
     } else if (rule === "R2") {
       params.append("highRiskThreshold", getRiskThreshold());
       params.append("minRiskyAccounts", getMinRisky());
-    } else if (rule === "R3" || rule === "R7" || rule === "ALL") {
-      params.append("riskThreshold", getRiskThreshold());
-      params.append("minRiskyAccounts", getMinRisky());
+  } else if (rule === "R3" || rule === "R7" || rule === "ALL") {
+    params.append("riskThreshold", getRiskThreshold());
+    params.append("minRiskyAccounts", getMinRisky());
+  }
+  params.append("limit", getLimit());
+  if (rule === "ALL") {
+    params.append("excludeFlagged", hideFlaggedCheckbox && hideFlaggedCheckbox.checked ? "true" : "false");
+    if (includeTemporalCheckbox && includeTemporalCheckbox.checked) {
+      params.append("includeTemporal", "true");
     }
-    params.append("limit", getLimit());
-    if (rule === "ALL") {
-      params.append("excludeFlagged", hideFlaggedCheckbox && hideFlaggedCheckbox.checked ? "true" : "false");
-    }
-    lastParams = params.toString();
-    let endpoint = "/neo-alerts/r1";
-    if (rule === "R2") endpoint = "/neo-alerts/r2";
-    if (rule === "R3") endpoint = "/neo-alerts/r3";
-    if (rule === "R7") endpoint = "/neo-alerts/r7";
-    if (rule === "ALL") endpoint = "/neo-alerts/search";
+  }
+  if (rule === "R8" || rule === "R9" || rule === "R10") {
+    const t = temporalParams();
+    params.append("name", t.name);
+    params.append("duration", t.duration);
+    params.append("amount", t.amount);
+    params.append("minAmount", t.minAmount);
+  }
+  lastParams = params.toString();
+  let endpoint = "/neo-alerts/r1";
+  if (rule === "R2") endpoint = "/neo-alerts/r2";
+  if (rule === "R3") endpoint = "/neo-alerts/r3";
+  if (rule === "R7") endpoint = "/neo-alerts/r7";
+  if (rule === "ALL") endpoint = "/neo-alerts/search";
+  if (rule === "R8") endpoint = "/neo-alerts/r8";
+  if (rule === "R9") endpoint = "/neo-alerts/r9";
+  if (rule === "R10") endpoint = "/neo-alerts/r10";
     const res = await fetch(`${API_BASE}${endpoint}?${params.toString()}`);
     const data = await res.json();
     renderAlerts(data);
@@ -127,8 +166,12 @@ async function fetchAlerts() {
     }
   } catch (err) {
     console.error("Failed to fetch alerts", err);
+    if (alertsStatus) alertsStatus.textContent = "Failed to load alerts.";
   } finally {
     setLoadingState(false);
+    if (alertsStatus && isTemporalRule) {
+      alertsStatus.textContent = alertsStatus.textContent || "Temporal query finished.";
+    }
   }
 }
 
@@ -139,17 +182,24 @@ function renderAlerts(alerts) {
 
   alerts.forEach((alert) => {
     const row = document.createElement("tr");
+    const temporalMeta =
+      alert.ruleKey === "R8" || alert.ruleKey === "R9" || alert.ruleKey === "R10"
+        ? [`${alert.pathLength ? `${alert.pathLength} hops` : ""}`, alert.maxAmount ? `max ₱${Number(alert.maxAmount).toLocaleString()}` : ""]
+            .filter(Boolean)
+            .join(" · ")
+        : "";
+    const displaySummary = temporalMeta ? `${alert.summary} (${temporalMeta})` : alert.summary;
     row.innerHTML = `
       <td><span class="badge ${severityClass(alert.severity)}">${alert.severity}</span></td>
       <td class="muted">#${alert.id}</td>
       <td>${alert.rule || "Account Risk"}</td>
-      <td>${alert.summary}</td>
+      <td>${displaySummary}</td>
       <td><span class="status-chip">${alert.status}</span></td>
       <td class="muted">${alert.created ? new Date(alert.created).toLocaleString() : ""}</td>
     `;
     row.addEventListener("click", () => {
       const rowRule = alert.ruleKey || getRule();
-      if (rowRule === "R1" || rowRule === "R3" || rowRule === "R7") {
+      if (rowRule === "R1" || rowRule === "R3" || rowRule === "R7" || rowRule === "R8" || rowRule === "R9" || rowRule === "R10") {
         selectedAccountId = alert.accountId;
         selectedDeviceId = null;
         selectedAnchorType = "ACCOUNT";
@@ -498,6 +548,13 @@ if (ruleSelect) {
 }
 if (hideFlaggedCheckbox) {
   hideFlaggedCheckbox.addEventListener("change", () => {
+    if (getRule() === "ALL") {
+      fetchAlerts();
+    }
+  });
+}
+if (includeTemporalCheckbox) {
+  includeTemporalCheckbox.addEventListener("change", () => {
     if (getRule() === "ALL") {
       fetchAlerts();
     }

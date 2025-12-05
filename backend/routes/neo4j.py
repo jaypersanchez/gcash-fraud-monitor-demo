@@ -120,15 +120,21 @@ def neo4j_graph_account(account_id: str):
     WHERE (a:Account AND a.account_number = $accountId)
        OR (a:Mule AND a.id = $accountId)
        OR (a:Client AND a.id = $accountId)
+    WITH a, labels(a) AS a_labels
     OPTIONAL MATCH (a)-[r:HAS_EMAIL|HAS_PHONE|HAS_SSN]->(id)<-[r2:HAS_EMAIL|HAS_PHONE|HAS_SSN]-(peer)
+    WITH a, a_labels,
+         collect(DISTINCT id) AS identifiers,
+         collect(DISTINCT {idNode: id, peer: peer, peerLabels: labels(peer)}) AS idPeers
     OPTIONAL MATCH (a)-[:PERFORMED]->(txOut:Transaction)-[:TO]->(dst)
+    WITH a, a_labels, identifiers, idPeers,
+         collect({tx: txOut, other: dst, otherLabels: labels(dst), direction: 'OUT'}) AS outTx
     OPTIONAL MATCH (src)-[:PERFORMED]->(txIn:Transaction)-[:TO]->(a)
     RETURN a,
-           labels(a) AS a_labels,
-           collect(DISTINCT id) AS identifiers,
-           collect(DISTINCT {idNode: id, peer: peer, peerLabels: labels(peer)}) AS idPeers,
-           collect(DISTINCT {tx: txOut, other: dst, otherLabels: labels(dst), direction: 'OUT'}) AS outbound,
-           collect(DISTINCT {tx: txIn, other: src, otherLabels: labels(src), direction: 'IN'}) AS inbound
+           a_labels,
+           identifiers,
+           idPeers,
+           outTx AS outbound,
+           collect({tx: txIn, other: src, otherLabels: labels(src), direction: 'IN'}) AS inbound
     """
     with get_driver() as driver:
         with driver.session() as session:
@@ -186,29 +192,34 @@ def neo4j_graph_account(account_id: str):
                 add_node(device_id, device_id, "Device", {"deviceType": "Identifier", "isFlagged": flagged_id})
                 edges.append({"source": peer_id, "target": device_id, "type": "HAS_IDENTIFIER"})
 
-            def handle_tx(items):
-                for item in items or []:
-                    tx = item.get("tx")
-                    other = item.get("other")
-                    other_labels = item.get("otherLabels") or []
-                    direction = item.get("direction")
-                    if not tx or not other:
-                        continue
-                    tx_ref = tx.get("tx_ref") or tx.get("id")
-                    add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
-                    other_id = other.get("account_number") or other.get("id")
-                    other_label = other.get("customer_name") or other.get("name") or other_id
-                    flagged_other = _is_flagged(other, other_labels)
-                    add_node(other_id, other_label, "Account", {"customerName": other_label, "isFlagged": flagged_other})
-                    if direction == "OUT":
-                        edges.append({"source": anchor_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
-                        edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
-                    else:
-                        edges.append({"source": other_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
-                        edges.append({"source": tx_ref, "target": anchor_id, "type": "TO"})
+    def handle_tx(items, direction_label):
+        cap = 7
+        count = 0
+        for item in items or []:
+            if count >= cap:
+                break
+            tx = item.get("tx")
+            other = item.get("other")
+            other_labels = item.get("otherLabels") or []
+            direction = item.get("direction") or direction_label
+            if not tx or not other:
+                continue
+            tx_ref = tx.get("tx_ref") or tx.get("id")
+            add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
+            other_id = other.get("account_number") or other.get("id")
+            other_label = other.get("customer_name") or other.get("name") or other_id
+            flagged_other = _is_flagged(other, other_labels)
+            add_node(other_id, other_label, "Account", {"customerName": other_label, "isFlagged": flagged_other})
+            if direction == "OUT":
+                edges.append({"source": anchor_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
+            else:
+                edges.append({"source": other_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                edges.append({"source": tx_ref, "target": anchor_id, "type": "TO"})
+            count += 1
 
-            handle_tx(record.get("outbound"))
-            handle_tx(record.get("inbound"))
+    handle_tx(record.get("outbound"), "OUT")
+    handle_tx(record.get("inbound"), "IN")
 
     # Overlay flags from Postgres
     account_ids = [n["id"] for n in nodes.values() if n["type"] == "Account"]

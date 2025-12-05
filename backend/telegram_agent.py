@@ -9,7 +9,7 @@ Env vars:
   TELEGRAM_BOT_TOKEN       Bot token (do not commit this)
   TELEGRAM_CHAT_ID         Chat/channel id to send messages to
   TELEGRAM_AGENT_ENDPOINT  Defaults to http://localhost:5005/api/ai-agent/top?limit=5
-  TELEGRAM_AGENT_INTERVAL  Poll interval seconds (default 60)
+  TELEGRAM_AGENT_INTERVAL  Poll interval seconds (default 180)
 """
 
 import os
@@ -64,7 +64,7 @@ def main():
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     endpoint = os.getenv("TELEGRAM_AGENT_ENDPOINT", "http://localhost:5005/api/ai-agent/top?limit=5")
-    interval = int(os.getenv("TELEGRAM_AGENT_INTERVAL", "60"))
+    interval = int(os.getenv("TELEGRAM_AGENT_INTERVAL", "180"))
     assess_endpoint = os.getenv("TELEGRAM_ASSESS_ENDPOINT", "http://localhost:5005/api/ai-agent/assess")
 
     if not token or not chat_id:

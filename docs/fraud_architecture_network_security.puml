@@ -1,0 +1,98 @@
+@startuml
+skinparam backgroundColor #ffffff
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam wrapWidth 220
+skinparam maxMessageSize 120
+skinparam ArrowColor #444444
+skinparam LineColor #444444
+skinparam DefaultFontName Menlo
+skinparam rectangleFontColor #111111
+skinparam rectangleFontSize 11
+
+' External actors
+actor Analyst as analyst
+cloud "SSO / IdP\n(MFA)" as idp
+cloud "Ops Channel\n(Telegram/Alt)" as ops
+cloud "AI Model API\n(OpenAI/Alchemi)" as ai
+cloud "Secrets Vault" as vault
+cloud "Observability\n(Logs/Traces/Metrics)" as obs
+
+' Edge layer
+rectangle "API Gateway / WAF\n- Rate limit\n- IP allowlist\n- TLS" as gateway
+
+package "App Tier (Private Subnet)" as apptier {
+  component "Graph UI\n(Cytoscape.js)" as ui
+  component "Python API Service\n(Flask/Django)" as api
+  component "Alert Bot\n(stateless)" as bot
+  component "AI Worker\n(graph snapshot summarizer)" as aiworker
+  queue "Message Bus\n(Kafka/SQS/Rabbit)" as bus
+  queue "Alert Queue" as alertq
+}
+
+package "Data Tier (Private Subnet)" as datatier {
+  database "Neo4j\n(Graph DB)" as neo
+  database "Postgres\n(Case Notes)" as pg
+}
+
+package "Security / Egress" as sec {
+  component "Egress Proxy\n(DLP/allowlist)" as egress
+}
+
+' Flows
+analyst --> gateway : HTTPS (OIDC)
+gateway --> ui : HTTPS
+ui --> api : HTTPS (JWT/OIDC)
+api --> bus : publish alerts / tasks
+bus --> bot
+bus --> aiworker
+aiworker --> egress : outbound AI calls
+bot --> alertq
+alertq --> ops : push alerts
+
+api --> neo : rule queries / graph writes
+api --> pg : notes / flags
+api <-- vault : fetch secrets/keys
+bot <-- vault
+aiworker <-- vault
+
+aiworker --> ai : redact PII, summarize
+obs <-- api
+obs <-- bot
+obs <-- aiworker
+obs <-- gateway
+
+idp --> gateway : authn
+idp --> ui : SSO login
+
+' Data protections and guards
+api ..> egress : outbound only
+api ..> gateway : behind WAF
+bot ..> gateway : mTLS/app token
+ops ..> bot : one-way notify only
+
+note right of api
+- Enforce authz per role
+- Parameterized queries
+- Input limits on rule/pattern queries
+- Audit every write/read of sensitive entities
+end note
+
+note bottom of datatier
+- No public endpoints
+- TLS in transit, encryption at rest
+- Scoped DB roles (read vs write)
+end note
+
+note bottom of egress
+- Allowlist AI endpoints
+- Strip PII; size limits
+- Observed via central logs
+end note
+
+note left of bus
+- Smooth spikes
+- Retry with DLQ
+end note
+
+@enduml

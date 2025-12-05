@@ -10,6 +10,8 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from sqlalchemy import select, text
 from neo4j import GraphDatabase
+from neo4j.graph import Path as NeoPath
+import requests
 
 # Ensure project root is on sys.path when running directly from backend/
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -52,15 +54,6 @@ def is_locally_flagged(anchor_id: str, anchor_type: str) -> bool:
         return exists
     finally:
         session.close()
-
-
-def is_flagged_record(rec: dict, anchor_type: str) -> bool:
-    anchor_id = rec.get("accountId") or rec.get("deviceId")
-    if not anchor_id:
-        return False
-    if str(rec.get("isFraud")).lower() == "true":
-        return True
-    return is_locally_flagged(anchor_id, anchor_type)
 
 
 def _detect_flag(obj: dict, labels=None) -> bool:
@@ -294,6 +287,21 @@ def is_flagged_record(rec: dict, anchor_type: str) -> bool:
     if str(rec.get("isFraud")).lower() == "true":
         return True
     return is_locally_flagged(anchor_id, anchor_type)
+
+
+def _node_prop(node, keys):
+    """Safe helper to pull the first available property from a Neo4j node."""
+    if not node:
+        return None
+    for k in keys:
+        try:
+            if k in node:
+                return node[k]
+        except Exception:
+            continue
+    return None
+
+
 def fetch_account_alerts(tx, min_risk: float):
     """
     Xavier data uses :Mule to represent flagged accounts.
@@ -414,6 +422,152 @@ def fetch_hub_alerts_r7(tx, risk_threshold: float, min_risky: int, limit: int):
         limit=limit,
     )
     return [record.data() for record in result]
+
+
+def _path_stats(path: NeoPath):
+    rels = list(path.relationships)
+    steps = len(rels)
+    amounts = []
+    times = []
+    for r in rels:
+        try:
+            if "amount" in r:
+                amounts.append(r["amount"])
+        except Exception:
+            pass
+        try:
+            if "globalStep" in r:
+                times.append(r["globalStep"])
+        except Exception:
+            pass
+    return {
+        "steps": steps,
+        "max_amount": max(amounts) if amounts else 0,
+        "min_amount": min(amounts) if amounts else 0,
+        "time_span": (max(times) - min(times)) if len(times) >= 2 else 0,
+    }
+
+
+def fetch_progressive_chain_r8(tx, name: str, duration: int, amount: float, min_hops: int, max_hops: int, limit: int):
+    """
+    Progressive multi-hop chain within a time window where amounts start high and decrease.
+    Based on Neo4j-provided pattern (10–20 hops, window duration, min amount).
+    """
+    min_hops = max(1, min_hops)
+    max_hops = max(min_hops, min(max_hops, 15))
+    cypher = f"""
+    MATCH p=(c1:Client {{name: $name}})
+    (
+      (:Client)-[t1:TRANSACTED_WITH]->(:Client)-[t2:TRANSACTED_WITH]->(:Client)
+      WHERE t1.globalStep + $duration > t2.globalStep > t1.globalStep
+        AND t2.amount < t1.amount
+        AND t1.amount > $amount
+    ){{{min_hops},{max_hops}}}(c2:Client)
+    RETURN p
+    LIMIT $limit
+    """
+    results = []
+    for record in tx.run(cypher, name=name, duration=duration, amount=amount, limit=limit):
+        path = record["p"]
+        stats = _path_stats(path)
+        start = path.start_node
+        end = path.end_node
+        account_id = _node_prop(start, ["id", "account_number"]) or name
+        customer_name = _node_prop(start, ["name", "customer_name"]) or name
+        severity = "Critical" if stats["steps"] >= 15 or stats["max_amount"] >= amount * 2 else "High"
+        summary = (
+            f"{customer_name} progressive chain {stats['steps']} hops "
+            f"(max {stats['max_amount']:,} in window {duration})"
+        )
+        results.append(
+            {
+                "accountId": account_id,
+                "customerName": customer_name,
+                "pathLength": stats["steps"],
+                "maxAmount": stats["max_amount"],
+                "timeSpan": stats["time_span"],
+                "isFraud": False,
+                "severity": severity,
+                "summary": summary,
+            }
+        )
+    return results
+
+
+def fetch_cycle_r9(tx, name: str, min_amount: float, min_hops: int, max_hops: int, limit: int):
+    """
+    Long high-value cycle (returns to same client) with min amount on each hop.
+    """
+    min_hops = max(1, min_hops)
+    max_hops = max(min_hops, min(max_hops, 15))
+    cypher = f"""
+    MATCH p=(c:Client {{name: $name}})-[r:TRANSACTED_WITH WHERE r.amount > $minAmount]->{{{min_hops},{max_hops}}}(c)
+    RETURN p
+    LIMIT $limit
+    """
+    results = []
+    for record in tx.run(cypher, name=name, minAmount=min_amount, limit=limit):
+        path = record["p"]
+        stats = _path_stats(path)
+        start = path.start_node
+        account_id = _node_prop(start, ["id", "account_number"]) or name
+        customer_name = _node_prop(start, ["name", "customer_name"]) or name
+        severity = "Critical" if stats["steps"] >= 18 or stats["max_amount"] >= min_amount * 1.2 else "High"
+        summary = f"{customer_name} cycle {stats['steps']} hops (min hop amount > {min_amount:,})"
+        results.append(
+            {
+                "accountId": account_id,
+                "customerName": customer_name,
+                "pathLength": stats["steps"],
+                "maxAmount": stats["max_amount"],
+                "timeSpan": stats["time_span"],
+                "isFraud": False,
+                "severity": severity,
+                "summary": summary,
+            }
+        )
+    return results
+
+
+def fetch_progressive_high_value_r10(tx, name: str, min_amount: float, min_hops: int, max_hops: int, limit: int):
+    """
+    Progressive time-ordered high-value chains (r2 after r1, both above threshold).
+    """
+    min_hops = max(1, min_hops)
+    max_hops = max(min_hops, min(max_hops, 15))
+    cypher = f"""
+    MATCH p=(c:Client {{name: $name}})
+    (
+      (:Client)-[r1:TRANSACTED_WITH]->(:Client)-[r2:TRANSACTED_WITH]->(:Client)
+      WHERE r2.globalStep > r1.globalStep
+        AND r1.amount > $minAmount
+        AND r2.amount > $minAmount
+    ){{{min_hops},{max_hops}}}(c)
+    RETURN p
+    LIMIT $limit
+    """
+    results = []
+    for record in tx.run(cypher, name=name, minAmount=min_amount, limit=limit):
+        path = record["p"]
+        stats = _path_stats(path)
+        start = path.start_node
+        account_id = _node_prop(start, ["id", "account_number"]) or name
+        customer_name = _node_prop(start, ["name", "customer_name"]) or name
+        severity = "Critical" if stats["steps"] >= 8 or stats["max_amount"] >= min_amount * 1.5 else "High"
+        summary = f"{customer_name} time-ordered chain {stats['steps']} hops (min amount > {min_amount:,})"
+        results.append(
+            {
+                "accountId": account_id,
+                "customerName": customer_name,
+                "pathLength": stats["steps"],
+                "maxAmount": stats["max_amount"],
+                "timeSpan": stats["time_span"],
+                "isFraud": False,
+                "severity": severity,
+                "summary": summary,
+            }
+        )
+    return results
 
 
 def create_app():
@@ -632,6 +786,148 @@ def create_app():
             )
         return jsonify(alerts)
 
+    @app.route("/api/neo-alerts/r8", methods=["GET"])
+    def neo4j_progressive_chains_r8():
+        if not driver:
+            return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
+        name = request.args.get("name", "Aubree David")
+        try:
+            duration = int(request.args.get("duration", 4000))
+        except Exception:
+            duration = 4000
+        try:
+            amount = float(request.args.get("amount", 50000))
+        except Exception:
+            amount = 50000.0
+        try:
+            min_hops = int(request.args.get("minHops", 5))
+        except Exception:
+            min_hops = 5
+        try:
+            max_hops = int(request.args.get("maxHops", 10))
+        except Exception:
+            max_hops = 10
+        try:
+            limit = int(request.args.get("limit", 5))
+        except Exception:
+            limit = 5
+
+        with driver.session() as session:
+            records = session.execute_read(fetch_progressive_chain_r8, name, duration, amount, min_hops, max_hops, limit)
+
+        alerts = []
+        for idx, rec in enumerate(records, start=1):
+            severity = rec.get("severity") or "High"
+            summary = rec.get("summary") or "Progressive chain detected"
+            alerts.append(
+                {
+                    "id": idx,
+                    "ruleKey": "R8",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "severity": severity,
+                    "rule": "R8 – Progressive time-window chain",
+                    "summary": summary,
+                    "pathLength": rec.get("pathLength"),
+                    "maxAmount": rec.get("maxAmount"),
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+        return jsonify(alerts)
+
+    @app.route("/api/neo-alerts/r9", methods=["GET"])
+    def neo4j_cycle_r9():
+        if not driver:
+            return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
+        name = request.args.get("name", "Aubree David")
+        try:
+            min_amount = float(request.args.get("minAmount", 1200000))
+        except Exception:
+            min_amount = 1200000.0
+        try:
+            min_hops = int(request.args.get("minHops", 10))
+        except Exception:
+            min_hops = 10
+        try:
+            max_hops = int(request.args.get("maxHops", 12))
+        except Exception:
+            max_hops = 12
+        try:
+            limit = int(request.args.get("limit", 5))
+        except Exception:
+            limit = 5
+
+        with driver.session() as session:
+            records = session.execute_read(fetch_cycle_r9, name, min_amount, min_hops, max_hops, limit)
+
+        alerts = []
+        for idx, rec in enumerate(records, start=1):
+            severity = rec.get("severity") or "High"
+            summary = rec.get("summary") or "Cycle detected"
+            alerts.append(
+                {
+                    "id": idx,
+                    "ruleKey": "R9",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "severity": severity,
+                    "rule": "R9 – High-value multi-hop cycle",
+                    "summary": summary,
+                    "pathLength": rec.get("pathLength"),
+                    "maxAmount": rec.get("maxAmount"),
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+        return jsonify(alerts)
+
+    @app.route("/api/neo-alerts/r10", methods=["GET"])
+    def neo4j_progressive_high_value_r10():
+        if not driver:
+            return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
+        name = request.args.get("name", "Aubree David")
+        try:
+            min_amount = float(request.args.get("minAmount", 800000))
+        except Exception:
+            min_amount = 800000.0
+        try:
+            min_hops = int(request.args.get("minHops", 3))
+        except Exception:
+            min_hops = 3
+        try:
+            max_hops = int(request.args.get("maxHops", 8))
+        except Exception:
+            max_hops = 8
+        try:
+            limit = int(request.args.get("limit", 5))
+        except Exception:
+            limit = 5
+
+        with driver.session() as session:
+            records = session.execute_read(fetch_progressive_high_value_r10, name, min_amount, min_hops, max_hops, limit)
+
+        alerts = []
+        for idx, rec in enumerate(records, start=1):
+            severity = rec.get("severity") or "High"
+            summary = rec.get("summary") or "Progressive high-value chain"
+            alerts.append(
+                {
+                    "id": idx,
+                    "ruleKey": "R10",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "severity": severity,
+                    "rule": "R10 – Time-ordered high-value chain",
+                    "summary": summary,
+                    "pathLength": rec.get("pathLength"),
+                    "maxAmount": rec.get("maxAmount"),
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+        return jsonify(alerts)
+
     @app.route("/api/neo-alerts/search", methods=["GET"])
     def neo4j_search_all_rules():
         if not driver:
@@ -653,6 +949,20 @@ def create_app():
         except Exception:
             limit = 20
         exclude_flagged = str(request.args.get("excludeFlagged", "false")).lower() == "true"
+        include_temporal = str(request.args.get("includeTemporal", "false")).lower() == "true"
+        name_param = request.args.get("name", "Aubree David")
+        try:
+            temporal_duration = int(request.args.get("duration", 6500))
+        except Exception:
+            temporal_duration = 6500
+        try:
+            temporal_amount = float(request.args.get("amount", 50000))
+        except Exception:
+            temporal_amount = 50000.0
+        try:
+            temporal_min_amount = float(request.args.get("minAmount", 1200000))
+        except Exception:
+            temporal_min_amount = 1200000.0
 
         alerts = []
         with driver.session() as session:
@@ -660,6 +970,13 @@ def create_app():
             r2 = session.execute_read(fetch_device_alerts_r2, high_risk, min_risky, limit)
             r3 = session.execute_read(fetch_mule_ring_alerts_r3, min_risky, limit)
             r7 = session.execute_read(fetch_hub_alerts_r7, risk_threshold, min_risky, limit)
+            r8 = []
+            r9 = []
+            r10 = []
+            if include_temporal:
+                r8 = session.execute_read(fetch_progressive_chain_r8, name_param, temporal_duration, temporal_amount, 5, 10, min(5, limit))
+                r9 = session.execute_read(fetch_cycle_r9, name_param, temporal_min_amount, 10, 12, min(5, limit))
+                r10 = session.execute_read(fetch_progressive_high_value_r10, name_param, temporal_min_amount, 3, 8, min(5, limit))
 
             def is_flagged(rec, anchor_type):
                 anchor_id = (rec.get("accountId") or rec.get("deviceId"))
@@ -759,20 +1076,71 @@ def create_app():
                         "txCount": tx_count,
                         "severity": severity,
                         "rule": "R7 – Risky funnel to hub",
-                        "summary": summary,
-                        "status": "Open",
-                        "created": datetime.utcnow().isoformat() + "Z",
+                    "summary": summary,
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
                 }
             )
+            # R8
+            for idx, rec in enumerate(r8, start=1):
+                severity = rec.get("severity") or "High"
+                summary = rec.get("summary") or "Progressive chain detected"
+                alerts.append(
+                    {
+                        "ruleKey": "R8",
+                        "id": f"R8-{idx}",
+                        "accountId": rec.get("accountId"),
+                        "customerName": rec.get("customerName"),
+                        "severity": severity,
+                        "rule": "R8 – Progressive time-window chain",
+                        "summary": summary,
+                        "pathLength": rec.get("pathLength"),
+                        "maxAmount": rec.get("maxAmount"),
+                        "status": "Open",
+                        "created": datetime.utcnow().isoformat() + "Z",
+                    }
+                )
+            # R9
+            for idx, rec in enumerate(r9, start=1):
+                severity = rec.get("severity") or "High"
+                summary = rec.get("summary") or "Cycle detected"
+                alerts.append(
+                    {
+                        "ruleKey": "R9",
+                        "id": f"R9-{idx}",
+                        "accountId": rec.get("accountId"),
+                        "customerName": rec.get("customerName"),
+                        "severity": severity,
+                        "rule": "R9 – High-value multi-hop cycle",
+                        "summary": summary,
+                        "pathLength": rec.get("pathLength"),
+                        "maxAmount": rec.get("maxAmount"),
+                        "status": "Open",
+                        "created": datetime.utcnow().isoformat() + "Z",
+                    }
+                )
+            # R10
+            for idx, rec in enumerate(r10, start=1):
+                severity = rec.get("severity") or "High"
+                summary = rec.get("summary") or "Progressive high-value chain"
+                alerts.append(
+                    {
+                        "ruleKey": "R10",
+                        "id": f"R10-{idx}",
+                        "accountId": rec.get("accountId"),
+                        "customerName": rec.get("customerName"),
+                        "severity": severity,
+                        "rule": "R10 – Time-ordered high-value chain",
+                        "summary": summary,
+                        "pathLength": rec.get("pathLength"),
+                        "maxAmount": rec.get("maxAmount"),
+                        "status": "Open",
+                        "created": datetime.utcnow().isoformat() + "Z",
+                    }
+                )
         return jsonify(alerts)
 
-    @app.route("/api/ai-agent/assess", methods=["POST"])
-    def ai_agent_assess():
-        payload = request.get_json(force=True) or {}
-        rule_key = payload.get("ruleKey") or payload.get("rule") or "R1"
-        anchor = payload.get("anchor") or payload.get("accountId") or payload.get("deviceId")
-        if not anchor:
-            return jsonify({"status": "error", "message": "Missing anchor"}), 400
+    def run_ai_assessment(rule_key: str, anchor: str):
         graph = _graph_for_identifier(anchor) if rule_key == "R2" else _graph_for_account(anchor)
         png_path = _render_dot_png(graph["nodes"], graph["edges"])
 
@@ -780,10 +1148,12 @@ def create_app():
         assessment = "OpenAI key not configured; no assessment generated."
         if openai_key:
             try:
-                import requests as req
-
-                prompt = f"Assess this fraud case. Rule={rule_key}, Anchor={anchor}. Nodes: {len(graph['nodes'])}, Edges: {len(graph['edges'])}. Flagged nodes may indicate known fraud. Provide a concise risk assessment and next action."
-                resp = req.post(
+                prompt = (
+                    f"Assess this fraud case. Rule={rule_key}, Anchor={anchor}. "
+                    f"Nodes: {len(graph['nodes'])}, Edges: {len(graph['edges'])}. "
+                    "Flagged nodes may indicate known fraud. Provide a concise risk assessment and next action."
+                )
+                resp = requests.post(
                     "https://api.openai.com/v1/chat/completions",
                     headers={
                         "Authorization": f"Bearer {openai_key}",
@@ -808,24 +1178,116 @@ def create_app():
             except Exception as exc:
                 assessment = f"OpenAI call failed: {exc}"
 
-        return jsonify(
-            {
-                "status": "ok",
-                "assessment": assessment,
-                "image_path": png_path,
-                "ruleKey": rule_key,
-                "anchor": anchor,
-                "graph": graph,
-            }
-        )
+        return {
+            "status": "ok",
+            "assessment": assessment,
+            "image_path": png_path,
+            "ruleKey": rule_key,
+            "anchor": anchor,
+            "graph": graph,
+        }
+
+    def compute_ai_top(risk_threshold=0.8, high_risk=None, min_risky=3, limit=5, exclude_flagged=True):
+        if not driver:
+            raise RuntimeError("Neo4j driver not configured")
+        high_risk = high_risk if high_risk is not None else risk_threshold
+
+        alerts = []
+        with driver.session() as session:
+            r1 = session.execute_read(fetch_account_alerts_r1, risk_threshold, limit)
+            r2 = session.execute_read(fetch_device_alerts_r2, high_risk, min_risky, limit)
+            r3 = session.execute_read(fetch_mule_ring_alerts_r3, min_risky, limit)
+            r7 = session.execute_read(fetch_hub_alerts_r7, risk_threshold, min_risky, limit)
+
+        def severity_rank(sev: str) -> int:
+            order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+            return order.get(sev, 3)
+
+        for idx, rec in enumerate(r1, start=1):
+            if exclude_flagged and is_flagged_record(rec, "ACCOUNT"):
+                continue
+            risk = rec.get("riskScore") or 0
+            severity = "Critical" if risk >= 0.95 else "High" if risk >= 0.9 else "Medium"
+            alerts.append(
+                {
+                    "ruleKey": "R1",
+                    "id": f"R1-{idx}",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "severity": severity,
+                    "summary": f"{rec.get('customerName')} ({rec.get('accountId')}) risk={risk:.2f}",
+                }
+            )
+
+        for idx, rec in enumerate(r2, start=1):
+            if exclude_flagged and is_flagged_record(rec, "DEVICE"):
+                continue
+            risky = rec.get("riskyAccounts") or 0
+            total = rec.get("totalAccounts") or 0
+            severity = "High" if risky >= 3 else "Medium"
+            alerts.append(
+                {
+                    "ruleKey": "R2",
+                    "id": f"R2-{idx}",
+                    "deviceId": rec.get("deviceId"),
+                    "deviceType": rec.get("deviceType"),
+                    "severity": severity,
+                    "summary": f"{rec.get('deviceId')} linked to {risky} risky / {total} total",
+                }
+            )
+
+        for idx, rec in enumerate(r3, start=1):
+            if exclude_flagged and is_flagged_record(rec, "ACCOUNT"):
+                continue
+            ring_size = rec.get("ringSize") or 0
+            risk = rec.get("riskScore") or 0
+            severity = "Critical" if ring_size >= 5 else "High"
+            alerts.append(
+                {
+                    "ruleKey": "R3",
+                    "id": f"R3-{idx}",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "severity": severity,
+                    "summary": f"{rec.get('accountId')} in ring size {ring_size} (risk={risk:.2f})",
+                }
+            )
+
+        for idx, rec in enumerate(r7, start=1):
+            if exclude_flagged and is_flagged_record(rec, "ACCOUNT"):
+                continue
+            risky = rec.get("riskySenders") or 0
+            tx_count = rec.get("txCount") or 0
+            severity = "Critical" if risky >= 5 else "High"
+            alerts.append(
+                {
+                    "ruleKey": "R7",
+                    "id": f"R7-{idx}",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "severity": severity,
+                    "summary": f"{rec.get('accountId')} receives from {risky} risky senders ({tx_count} tx)",
+                }
+            )
+
+        alerts_sorted = sorted(alerts, key=lambda a: severity_rank(a.get("severity")))
+        return alerts_sorted[:limit]
+
+    @app.route("/api/ai-agent/assess", methods=["POST"])
+    def ai_agent_assess():
+        payload = request.get_json(force=True) or {}
+        rule_key = payload.get("ruleKey") or payload.get("rule") or "R1"
+        anchor = payload.get("anchor") or payload.get("accountId") or payload.get("deviceId")
+        if not anchor:
+            return jsonify({"status": "error", "message": "Missing anchor"}), 400
+        result = run_ai_assessment(rule_key, anchor)
+        return jsonify(result)
 
     @app.route("/api/ai-agent/top", methods=["GET"])
     def ai_agent_top():
         """
         Background agent helper: list top unflagged suspects across R1/R2/R3/R7.
         """
-        if not driver:
-            return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
         try:
             risk_threshold = float(request.args.get("riskThreshold", 0.8))
         except Exception:
@@ -843,86 +1305,147 @@ def create_app():
         except Exception:
             limit = 5
 
-        alerts = []
-        with driver.session() as session:
-            r1 = session.execute_read(fetch_account_alerts_r1, risk_threshold, limit)
-            r2 = session.execute_read(fetch_device_alerts_r2, high_risk, min_risky, limit)
-            r3 = session.execute_read(fetch_mule_ring_alerts_r3, min_risky, limit)
-            r7 = session.execute_read(fetch_hub_alerts_r7, risk_threshold, min_risky, limit)
-
-        def severity_rank(sev: str) -> int:
-            order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
-            return order.get(sev, 3)
-
-        for idx, rec in enumerate(r1, start=1):
-            if is_flagged_record(rec, "ACCOUNT"):
-                continue
-            risk = rec.get("riskScore") or 0
-            severity = "Critical" if risk >= 0.95 else "High" if risk >= 0.9 else "Medium"
-            alerts.append(
-                {
-                    "ruleKey": "R1",
-                    "id": f"R1-{idx}",
-                    "accountId": rec.get("accountId"),
-                    "customerName": rec.get("customerName"),
-                    "severity": severity,
-                    "summary": f"{rec.get('customerName')} ({rec.get('accountId')}) risk={risk:.2f}",
-                }
+        try:
+            alerts = compute_ai_top(
+                risk_threshold=risk_threshold,
+                high_risk=high_risk,
+                min_risky=min_risky,
+                limit=limit,
+                exclude_flagged=True,
             )
+        except Exception as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 500
+        return jsonify(alerts)
 
-        for idx, rec in enumerate(r2, start=1):
-            if is_flagged_record(rec, "DEVICE"):
-                continue
-            risky = rec.get("riskyAccounts") or 0
-            total = rec.get("totalAccounts") or 0
-            severity = "High" if risky >= 3 else "Medium"
-            alerts.append(
-                {
-                    "ruleKey": "R2",
-                    "id": f"R2-{idx}",
-                    "deviceId": rec.get("deviceId"),
-                    "deviceType": rec.get("deviceType"),
-                    "severity": severity,
-                    "summary": f"{rec.get('deviceId')} linked to {risky} risky / {total} total",
-                }
+    def _telegram_send_message(chat_id: str, text: str, reply_markup=None):
+        token = os.getenv("TELEGRAM_BOT_TOKEN")
+        if not token:
+            raise RuntimeError("TELEGRAM_BOT_TOKEN not configured")
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        resp = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage", json=payload, timeout=15
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def _telegram_send_photo(chat_id: str, caption: str, photo_path: str):
+        token = os.getenv("TELEGRAM_BOT_TOKEN")
+        if not token:
+            raise RuntimeError("TELEGRAM_BOT_TOKEN not configured")
+        with open(photo_path, "rb") as f:
+            resp = requests.post(
+                f"https://api.telegram.org/bot{token}/sendPhoto",
+                data={"chat_id": chat_id, "caption": caption},
+                files={"photo": f},
+                timeout=20,
             )
+        resp.raise_for_status()
+        return resp.json()
 
-        for idx, rec in enumerate(r3, start=1):
-            if is_flagged_record(rec, "ACCOUNT"):
+    def _telegram_answer_callback(callback_id: str, text: str = None):
+        token = os.getenv("TELEGRAM_BOT_TOKEN")
+        if not token or not callback_id:
+            return
+        payload = {"callback_query_id": callback_id}
+        if text:
+            payload["text"] = text
+        requests.post(
+            f"https://api.telegram.org/bot{token}/answerCallbackQuery",
+            json=payload,
+            timeout=10,
+        )
+
+    def _build_inline_keyboard(alerts):
+        keyboard = []
+        for a in alerts:
+            anchor = a.get("accountId") or a.get("deviceId")
+            if not anchor:
                 continue
-            ring_size = rec.get("ringSize") or 0
-            risk = rec.get("riskScore") or 0
-            severity = "Critical" if ring_size >= 5 else "High"
-            alerts.append(
-                {
-                    "ruleKey": "R3",
-                    "id": f"R3-{idx}",
-                    "accountId": rec.get("accountId"),
-                    "customerName": rec.get("customerName"),
-                    "severity": severity,
-                    "summary": f"{rec.get('accountId')} in ring size {ring_size} (risk={risk:.2f})",
-                }
-            )
+            title = f"{a.get('ruleKey', '')} | {anchor}"
+            cb_data = f"assess|{a.get('ruleKey', '')}|{anchor}"
+            keyboard.append([{"text": title[:60], "callback_data": cb_data[:60]}])
+        return {"inline_keyboard": keyboard} if keyboard else None
 
-        for idx, rec in enumerate(r7, start=1):
-            if is_flagged_record(rec, "ACCOUNT"):
-                continue
-            risky = rec.get("riskySenders") or 0
-            tx_count = rec.get("txCount") or 0
-            severity = "Critical" if risky >= 5 else "High"
-            alerts.append(
-                {
-                    "ruleKey": "R7",
-                    "id": f"R7-{idx}",
-                    "accountId": rec.get("accountId"),
-                    "customerName": rec.get("customerName"),
-                    "severity": severity,
-                    "summary": f"{rec.get('accountId')} receives from {risky} risky senders ({tx_count} tx)",
-                }
-            )
+    def _handle_telegram_update(update: dict):
+        if not update:
+            return {"handled": "empty"}
 
-        alerts_sorted = sorted(alerts, key=lambda a: severity_rank(a.get("severity")))
-        return jsonify(alerts_sorted[:limit])
+        # Callback query: run assessment on demand
+        if "callback_query" in update:
+            cb = update["callback_query"]
+            chat_id = cb.get("message", {}).get("chat", {}).get("id")
+            data = cb.get("data") or ""
+            _telegram_answer_callback(cb.get("id"))
+            if data.startswith("assess|"):
+                parts = data.split("|", 2)
+                if len(parts) == 3:
+                    rule_key, anchor = parts[1], parts[2]
+                    _telegram_send_message(chat_id, f"Running assessment for {rule_key} ({anchor})…")
+                    result = run_ai_assessment(rule_key, anchor)
+                    caption = result.get("assessment") or "No assessment."
+                    img_path = result.get("image_path")
+                    if img_path and os.path.exists(img_path):
+                        _telegram_send_photo(chat_id, caption[:1000], img_path)
+                    else:
+                        _telegram_send_message(chat_id, caption[:4000])
+            return {"handled": "callback"}
+
+        message = update.get("message")
+        if not message:
+            return {"handled": "ignored"}
+
+        chat_id = message.get("chat", {}).get("id")
+        text = (message.get("text") or "").strip()
+        lower = text.lower()
+
+        if lower.startswith("/start"):
+            _telegram_send_message(
+                chat_id,
+                "👋 Fraud agent ready. Send /sweep to scan for unflagged suspects and tap a result to assess.",
+            )
+            return {"handled": "start"}
+
+        if lower.startswith("/sweep") or lower.startswith("/scan"):
+            alerts = compute_ai_top(limit=5, exclude_flagged=True)
+            if not alerts:
+                _telegram_send_message(chat_id, "No unflagged suspects right now.")
+                return {"handled": "sweep-empty"}
+            keyboard = _build_inline_keyboard(alerts)
+            lines = []
+            for a in alerts:
+                anchor = a.get("accountId") or a.get("deviceId")
+                sev = a.get("severity") or ""
+                lines.append(f"{a.get('ruleKey')} [{sev}] {anchor}")
+            body = "🔍 Search & Destroy suspects (tap to assess):\n" + "\n".join(lines)
+            _telegram_send_message(chat_id, body, reply_markup=keyboard)
+            return {"handled": "sweep"}
+
+        _telegram_send_message(chat_id, "Send /sweep to look for unflagged suspects.")
+        return {"handled": "fallback"}
+
+    @app.route("/api/telegram/webhook", methods=["POST"])
+    def telegram_webhook():
+        secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
+        provided = request.args.get("token") or request.headers.get("X-Telegram-Token")
+        if secret and provided != secret:
+            return jsonify({"status": "error", "message": "Unauthorized"}), 403
+        try:
+            update = request.get_json(force=True) or {}
+        except Exception:
+            update = {}
+        try:
+            result = _handle_telegram_update(update)
+            return jsonify({"status": "ok", "result": result})
+        except Exception as exc:
+            print(f"[TELEGRAM-WEBHOOK] error: {exc}")
+            return jsonify({"status": "error", "message": str(exc)}), 500
 
     @app.route("/api/db-health", methods=["GET"])
     def db_health():
