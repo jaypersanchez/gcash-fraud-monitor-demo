@@ -56,7 +56,8 @@ def format_alert(a: dict) -> str:
     summary = a.get("summary") or ""
     sev = a.get("severity") or ""
     anchor = a.get("accountId") or a.get("deviceId") or ""
-    return f"• [{sev}] {rule}: {summary}\n    anchor: {anchor}"
+    prefix = "[FAF] " if rule.startswith("FAF-") else ""
+    return f"• [{sev}] {prefix}{rule}: {summary}\n    anchor: {anchor}"
 
 
 def main():
