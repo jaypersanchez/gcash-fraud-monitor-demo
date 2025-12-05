@@ -11,6 +11,8 @@ from backend.models import (
 )
 from backend.models.alert import STATUS_VALUES
 from . import neo4j_client_mock
+from backend.services.faf_engine import evaluate_account
+from backend.services.feature_builder import build_features_for_account
 
 
 def _get_or_create_account(session, account_number: str, customer_name: str):
@@ -35,7 +37,22 @@ def _get_or_create_device(session, device_id: str, device_type: Optional[str] = 
     return device
 
 
-def refresh_alerts(rule_id: Optional[int] = None) -> int:
+def _get_or_create_rule_by_key(session, rule_key: str, severity: str, description: str = None) -> RuleDefinition:
+    rule = session.execute(select(RuleDefinition).where(RuleDefinition.name == rule_key)).scalar_one_or_none()
+    if rule:
+        return rule
+    rule = RuleDefinition(
+        name=rule_key,
+        description=description or rule_key,
+        severity=severity or "HIGH",
+        enabled=True,
+    )
+    session.add(rule)
+    session.flush()
+    return rule
+
+
+def refresh_alerts(rule_id: Optional[int] = None, neo4j_driver=None) -> int:
     session = get_session()
     try:
         query = select(RuleDefinition).where(RuleDefinition.enabled.is_(True))
@@ -43,6 +60,7 @@ def refresh_alerts(rule_id: Optional[int] = None) -> int:
             query = query.where(RuleDefinition.id == rule_id)
         rules = session.execute(query).scalars().all()
         generated = 0
+        faf_accounts = set()
 
         for rule in rules:
             detections = neo4j_client_mock.run_rule(rule)
@@ -75,6 +93,43 @@ def refresh_alerts(rule_id: Optional[int] = None) -> int:
                     network_summary=detection.get("network_summary"),
                     linked_accounts=detection.get("linked_accounts", []),
                     linked_devices=linked_devices_data,
+                )
+                session.add(case)
+                generated += 1
+
+                if subject_account.account_number:
+                    faf_accounts.add(subject_account.account_number)
+
+        # FAF evaluation for gathered accounts (MVP: per account_number)
+        for acct_number in faf_accounts:
+            features = build_features_for_account(acct_number, session, neo4j_driver)
+            candidates = evaluate_account(acct_number, features)
+            if not candidates:
+                continue
+            subject_account = _get_or_create_account(session, acct_number, "Unknown")
+            for cand in candidates:
+                faf_rule = _get_or_create_rule_by_key(session, cand.rule_id, cand.severity, cand.title)
+                alert = Alert(
+                    rule_id=faf_rule.id,
+                    subject_account_id=subject_account.id,
+                    severity=cand.severity if cand.severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW") else "HIGH",
+                    status=STATUS_VALUES[0],
+                    summary=cand.summary,
+                    details={
+                        "anchor_type": cand.anchor_type,
+                        "anchor_id": cand.anchor_id,
+                        "faf": True,
+                    },
+                )
+                session.add(alert)
+                session.flush()
+                case = Case(
+                    alert_id=alert.id,
+                    subject_account_id=subject_account.id,
+                    status=STATUS_VALUES[0],
+                    network_summary=None,
+                    linked_accounts=[],
+                    linked_devices=[],
                 )
                 session.add(case)
                 generated += 1

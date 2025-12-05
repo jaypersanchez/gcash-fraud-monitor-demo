@@ -26,6 +26,7 @@ def run_alerts_refresh():
 @alerts_bp.route("/alerts", methods=["GET"])
 def list_alerts():
     status_filter = request.args.get("status")
+    family_filter = request.args.get("family")
     session = get_session()
     try:
         severity_order = case(
@@ -41,6 +42,8 @@ def list_alerts():
         )
         if status_filter:
             query = query.where(Alert.status == status_filter)
+        if family_filter and family_filter.upper() == "FAF":
+            query = query.where(RuleDefinition.name.like("FAF-%"))
 
         results = session.execute(query).all()
         alerts = []

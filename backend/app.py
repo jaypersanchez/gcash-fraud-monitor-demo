@@ -21,7 +21,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.config import Config
 from backend.db.session import engine, get_session
-from backend.models import Base, RuleDefinition, Account, Device
+from backend.models import Base, RuleDefinition, Account, Device, Alert
 from backend.models.investigator_action import InvestigatorAction
 from backend.routes.alerts import alerts_bp
 from backend.routes.cases import cases_bp
@@ -1269,6 +1269,33 @@ def create_app():
                     "summary": f"{rec.get('accountId')} receives from {risky} risky senders ({tx_count} tx)",
                 }
             )
+
+        # Include FAF alerts from persisted Alert table (rule_key like FAF-%)
+        session_db = get_session()
+        try:
+            faf_results = (
+                session_db.query(Alert, RuleDefinition, Account)
+                .join(RuleDefinition, Alert.rule_id == RuleDefinition.id)
+                .join(Account, Alert.subject_account_id == Account.id)
+                .filter(RuleDefinition.name.like("FAF-%"))
+                .order_by(Alert.created_at.desc())
+                .limit(limit * 2)
+                .all()
+            )
+            for alert_obj, rule_def, acct in faf_results:
+                rec = {
+                    "ruleKey": rule_def.name,
+                    "id": f"{rule_def.name}-{alert_obj.id}",
+                    "accountId": acct.account_number,
+                    "customerName": acct.customer_name,
+                    "severity": alert_obj.severity.title() if alert_obj.severity else "High",
+                    "summary": alert_obj.summary,
+                }
+                if exclude_flagged and is_flagged_record(rec, "ACCOUNT"):
+                    continue
+                alerts.append(rec)
+        finally:
+            session_db.close()
 
         alerts_sorted = sorted(alerts, key=lambda a: severity_rank(a.get("severity")))
         return alerts_sorted[:limit]
