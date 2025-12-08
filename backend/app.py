@@ -935,11 +935,11 @@ def create_app():
         if not driver:
             return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
         try:
-            risk_threshold = float(request.args.get("riskThreshold", 0.8))
+            risk_threshold = float(request.args.get("riskThreshold", 0.1))
         except Exception:
-            risk_threshold = 0.8
+            risk_threshold = 0.1
         try:
-            high_risk = float(request.args.get("highRiskThreshold", 0.8))
+            high_risk = float(request.args.get("highRiskThreshold", 0.1))
         except Exception:
             high_risk = risk_threshold
         try:
@@ -950,8 +950,8 @@ def create_app():
             limit = int(request.args.get("limit", 20))
         except Exception:
             limit = 20
-        # Search & Destroy runs all R rules by default; include flagged to surface Neo4j detections
-        exclude_flagged = False
+        # Search & Destroy runs all R rules by default; exclude flagged to focus on unflagged suspects
+        exclude_flagged = True
         include_temporal = True
         name_param = request.args.get("name", "Aubree David")
         try:

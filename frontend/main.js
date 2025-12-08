@@ -84,8 +84,8 @@ function getRule() {
 }
 
 function getRiskThreshold() {
-  if (riskSlider) return parseFloat(riskSlider.value) || 0.8;
-  return 0.8;
+  if (riskSlider) return parseFloat(riskSlider.value) || 0.1;
+  return 0.1;
 }
 
 function getLimit() {
