@@ -8,6 +8,7 @@ const API_BASE =
 const alertsBody = document.getElementById("alerts-body");
 const alertsEmpty = document.getElementById("alerts-empty");
 const refreshBtn = document.getElementById("refresh-alerts");
+const refreshApiBtn = document.getElementById("refresh-alerts-api");
 const alertsNav = document.getElementById("alerts-nav");
 const alertsSection = document.getElementById("alerts-section");
 const alertsStatus = document.getElementById("alerts-status");
@@ -264,6 +265,25 @@ function setLoadingState(isLoading) {
 }
 
 refreshBtn.addEventListener("click", refreshAlerts);
+if (refreshApiBtn) {
+  refreshApiBtn.addEventListener("click", async () => {
+    refreshApiBtn.textContent = "Refreshing via API...";
+    refreshApiBtn.disabled = true;
+    try {
+      const res = await fetch(`${API_BASE}/alerts/refresh`, { method: "POST" });
+      const data = await res.json();
+      const generated = data.generated_alerts || 0;
+      if (alertsStatus) alertsStatus.textContent = `Refresh completed. Generated ${generated} alert(s).`;
+      await fetchAlerts();
+    } catch (err) {
+      if (alertsStatus) alertsStatus.textContent = "Refresh failed.";
+      console.error(err);
+    } finally {
+      refreshApiBtn.textContent = "Refresh Alerts (API)";
+      refreshApiBtn.disabled = false;
+    }
+  });
+}
 
 alertsNav.addEventListener("click", () => {
   alertsSection.scrollIntoView({ behavior: "smooth" });
