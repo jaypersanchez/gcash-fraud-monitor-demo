@@ -950,8 +950,9 @@ def create_app():
             limit = int(request.args.get("limit", 20))
         except Exception:
             limit = 20
-        exclude_flagged = str(request.args.get("excludeFlagged", "false")).lower() == "true"
-        include_temporal = str(request.args.get("includeTemporal", "false")).lower() == "true"
+        # Search & Destroy runs all R rules by default
+        exclude_flagged = False
+        include_temporal = True
         name_param = request.args.get("name", "Aubree David")
         try:
             temporal_duration = int(request.args.get("duration", 6500))

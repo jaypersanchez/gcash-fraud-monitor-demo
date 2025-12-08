@@ -129,9 +129,7 @@ async function fetchAlerts() {
     params.append("minRiskyAccounts", getMinRisky());
   }
   params.append("limit", getLimit());
-  if (rule === "ALL") {
-    params.append("excludeFlagged", "false");
-  }
+  // Search & Destroy now runs all R rules by default on the backend; no extra params here.
   if (rule === "R8" || rule === "R9" || rule === "R10") {
     const t = temporalParams();
     params.append("name", t.name);
