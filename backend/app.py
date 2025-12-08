@@ -985,36 +985,36 @@ def create_app():
             anchor_id = (rec.get("accountId") or rec.get("deviceId"))
             if not anchor_id:
                 return False
-            # For Search & Destroy, only honor local flags (investigator_actions);
-            # do not suppress based on Neo4j isFraud/flagged so we can surface candidates.
+            if str(rec.get("isFraud")).lower() == "true" or rec.get("flagged") is True:
+                return True
             return is_locally_flagged(anchor_id, anchor_type)
 
-            # R1
-            for idx, rec in enumerate(r1, start=1):
-                if exclude_flagged and is_flagged(rec, "ACCOUNT"):
-                    continue
-                risk = rec.get("riskScore") or 0
-                if risk >= 0.95:
-                    severity = "Critical"
-                elif risk >= 0.9:
-                    severity = "High"
-                else:
-                    severity = "Medium"
-                summary = f"{rec.get('customerName')} ({rec.get('accountId')}) risk={risk:.2f} is_fraud={rec.get('isFraud')}"
-                alerts.append(
-                    {
-                        "ruleKey": "R1",
-                        "id": f"R1-{idx}",
-                        "accountId": rec.get("accountId"),
-                        "customerName": rec.get("customerName"),
-                        "riskScore": risk,
-                        "severity": severity,
-                        "rule": "R1 – High risk / flagged account",
-                        "summary": summary,
-                        "status": "Open",
-                        "created": datetime.utcnow().isoformat() + "Z",
-                    }
-                )
+        # R1
+        for idx, rec in enumerate(r1, start=1):
+            if exclude_flagged and is_flagged(rec, "ACCOUNT"):
+                continue
+            risk = rec.get("riskScore") or 0
+            if risk >= 0.95:
+                severity = "Critical"
+            elif risk >= 0.9:
+                severity = "High"
+            else:
+                severity = "Medium"
+            summary = f"{rec.get('customerName')} ({rec.get('accountId')}) risk={risk:.2f} is_fraud={rec.get('isFraud')}"
+            alerts.append(
+                {
+                    "ruleKey": "R1",
+                    "id": f"R1-{idx}",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "riskScore": risk,
+                    "severity": severity,
+                    "rule": "R1 – High risk / flagged account",
+                    "summary": summary,
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
+                }
+            )
             # R2
             for idx, rec in enumerate(r2, start=1):
                 risky = rec.get("riskyAccounts") or 0
