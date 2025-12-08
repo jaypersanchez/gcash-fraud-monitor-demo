@@ -21,9 +21,9 @@ const limitInput = document.getElementById("limitInput");
 const riskValue = document.getElementById("riskValue");
 const ruleSelect = document.getElementById("ruleSelect");
 const minRiskyInput = document.getElementById("minRisky");
-const hideFlaggedCheckbox = document.getElementById("hideFlagged");
-const includeTemporalCheckbox = document.getElementById("includeTemporal");
-const fafOnlyCheckbox = document.getElementById("fafOnly");
+const hideFlaggedCheckbox = null;
+const includeTemporalCheckbox = null;
+const fafOnlyCheckbox = null;
 const temporalNameInput = document.getElementById("temporalName");
 const temporalDurationInput = document.getElementById("temporalDuration");
 const temporalAmountInput = document.getElementById("temporalAmount");
@@ -110,8 +110,8 @@ function temporalParams() {
 async function fetchAlerts() {
   setLoadingState(true);
   const rule = getRule();
-  const fafOnly = fafOnlyCheckbox && fafOnlyCheckbox.checked;
-  const isTemporalRule = rule === "R8" || rule === "R9" || rule === "R10" || (rule === "ALL" && includeTemporalCheckbox && includeTemporalCheckbox.checked);
+  const fafOnly = false;
+  const isTemporalRule = rule === "R8" || rule === "R9" || rule === "R10";
   if (alertsStatus && isTemporalRule) {
     alertsStatus.textContent = "Running temporal query… this may take a few seconds for long paths.";
   } else if (alertsStatus) {
@@ -130,10 +130,7 @@ async function fetchAlerts() {
   }
   params.append("limit", getLimit());
   if (rule === "ALL") {
-    params.append("excludeFlagged", hideFlaggedCheckbox && hideFlaggedCheckbox.checked ? "true" : "false");
-    if (includeTemporalCheckbox && includeTemporalCheckbox.checked) {
-      params.append("includeTemporal", "true");
-    }
+    params.append("excludeFlagged", "false");
   }
   if (rule === "R8" || rule === "R9" || rule === "R10") {
     const t = temporalParams();
