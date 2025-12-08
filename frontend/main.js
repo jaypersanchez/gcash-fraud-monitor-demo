@@ -24,10 +24,10 @@ const minRiskyInput = document.getElementById("minRisky");
 const hideFlaggedCheckbox = null;
 const includeTemporalCheckbox = null;
 const fafOnlyCheckbox = null;
-const temporalNameInput = document.getElementById("temporalName");
-const temporalDurationInput = document.getElementById("temporalDuration");
-const temporalAmountInput = document.getElementById("temporalAmount");
-const temporalMinAmountInput = document.getElementById("temporalMinAmount");
+const temporalNameInput = null;
+const temporalDurationInput = null;
+const temporalAmountInput = null;
+const temporalMinAmountInput = null;
 const selectionInfo = document.getElementById("selection-info");
 const flagAccountBtn = document.getElementById("flag-account");
 const flagDeviceBtn = document.getElementById("flag-device");
@@ -100,10 +100,10 @@ function getMinRisky() {
 
 function temporalParams() {
   return {
-    name: (temporalNameInput && temporalNameInput.value) || "Aubree David",
-    duration: temporalDurationInput ? parseInt(temporalDurationInput.value || "6500", 10) : 6500,
-    amount: temporalAmountInput ? parseFloat(temporalAmountInput.value || "50000") : 50000,
-    minAmount: temporalMinAmountInput ? parseFloat(temporalMinAmountInput.value || "1200000") : 1200000,
+    name: "",
+    duration: 0,
+    amount: 0,
+    minAmount: 0,
   };
 }
 
@@ -130,13 +130,7 @@ async function fetchAlerts() {
   }
   params.append("limit", getLimit());
   // Search & Destroy now runs all R rules by default on the backend; no extra params here.
-  if (rule === "R8" || rule === "R9" || rule === "R10") {
-    const t = temporalParams();
-    params.append("name", t.name);
-    params.append("duration", t.duration);
-    params.append("amount", t.amount);
-    params.append("minAmount", t.minAmount);
-  }
+  // R8-R10 temporal params removed from UI; backend uses defaults
   lastParams = params.toString();
   let endpoint = "/neo-alerts/r1";
   if (fafOnly) {
