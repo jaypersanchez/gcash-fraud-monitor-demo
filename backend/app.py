@@ -980,11 +980,16 @@ def create_app():
                 r9 = session.execute_read(fetch_cycle_r9, name_param, temporal_min_amount, 10, 12, min(5, limit))
                 r10 = session.execute_read(fetch_progressive_high_value_r10, name_param, temporal_min_amount, 3, 8, min(5, limit))
 
-            def is_flagged(rec, anchor_type):
-                anchor_id = (rec.get("accountId") or rec.get("deviceId"))
-                if not anchor_id:
-                    return False
-                return is_locally_flagged(anchor_id, anchor_type)
+        def is_flagged(rec, anchor_type):
+            anchor_id = (rec.get("accountId") or rec.get("deviceId"))
+            if not anchor_id:
+                return False
+            # Neo4j-level flag (isFraud/flagged) or locally flagged in Postgres
+            if str(rec.get("isFraud")).lower() == "true":
+                return True
+            if rec.get("flagged") is True:
+                return True
+            return is_locally_flagged(anchor_id, anchor_type)
 
             # R1
             for idx, rec in enumerate(r1, start=1):

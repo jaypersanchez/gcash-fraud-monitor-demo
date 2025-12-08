@@ -45,6 +45,8 @@ def list_alerts():
             query = query.where(Alert.status == status_filter)
         if family_filter and family_filter.upper() == "FAF":
             query = query.where(RuleDefinition.name.like("FAF-%"))
+            # Hide legacy GCASH-seeded alerts; keep Neo4j-driven anchors
+            query = query.where((Account.account_number.is_(None)) | (~Account.account_number.like("GCASH-%")))
 
         results = session.execute(query).all()
         alerts = []
