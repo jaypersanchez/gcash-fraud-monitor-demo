@@ -46,6 +46,12 @@ const caseActionStatus = document.getElementById("case-action-status");
 const caseBlockBtn = document.getElementById("case-block");
 const caseSafeBtn = document.getElementById("case-safe");
 const caseEscalateBtn = document.getElementById("case-escalate");
+const afasaStatus = document.getElementById("afasa-status");
+const afasaDetails = document.getElementById("afasa-details");
+const afasaCreateBtn = document.getElementById("afasa-create");
+const afasaHoldBtn = document.getElementById("afasa-hold");
+const afasaReleaseBtn = document.getElementById("afasa-release");
+const afasaActionStatus = document.getElementById("afasa-action-status");
 
 let alertsCache = [];
 let selectedAccountId = null;
@@ -57,6 +63,7 @@ let selectedAlert = null;
 const notesByAnchor = {};
 const actionsByAnchor = {};
 let graphTooltip = null;
+let activeDisputeId = null;
 
 const severityClass = (severity) => {
   const map = {
@@ -197,11 +204,15 @@ function renderAlerts(alerts) {
             .join(" · ")
         : "";
     const displaySummary = temporalMeta ? `${alert.summary} (${temporalMeta})` : alert.summary;
+    const afasaBadge =
+      alert.afasa_risk_score || alert.afasa_suspicion_type
+        ? `<span class="status-chip" style="background:#ffe9d6;color:#a65b00;">AFASA ${alert.afasa_suspicion_type || ""} (${alert.afasa_risk_score || "n/a"})</span>`
+        : "";
     row.innerHTML = `
       <td><span class="badge ${severityClass(alert.severity)}">${alert.severity}</span></td>
       <td class="muted">#${alert.id}</td>
       <td>${alert.rule || "Account Risk"}</td>
-      <td>${displaySummary}</td>
+      <td>${displaySummary} ${afasaBadge}</td>
       <td><span class="status-chip">${alert.status}</span></td>
       <td class="muted">${alert.created ? new Date(alert.created).toLocaleString() : ""}</td>
     `;
@@ -576,6 +587,7 @@ function updateSelectionInfo() {
     const noun = selectedAnchorType === "DEVICE" ? "identifier" : "account";
     selectionInfo.textContent = anchor ? `Selected ${noun} ${anchor} (${ruleLabel})` : "No selection yet.";
   }
+  updateAfasaInfo();
   renderContext();
 }
 
@@ -772,6 +784,99 @@ if (caseBlockBtn) caseBlockBtn.addEventListener("click", () => handleCaseAction(
 if (caseSafeBtn) caseSafeBtn.addEventListener("click", () => handleCaseAction("SAFE"));
 if (caseEscalateBtn) caseEscalateBtn.addEventListener("click", () => handleCaseAction("ESCALATE"));
 
+function updateAfasaInfo(dispute) {
+  if (!afasaStatus || !afasaDetails) return;
+  const alert = selectedAlert;
+  const suspicion = (alert && (alert.afasa_suspicion_type || alert.suspicion_type)) || "n/a";
+  const risk = (alert && (alert.afasa_risk_score || alert.riskScore)) || "n/a";
+  afasaStatus.textContent = alert ? `Suspicion: ${suspicion} | Risk: ${risk}` : "No AFASA data";
+  afasaDetails.textContent = dispute
+    ? `Dispute #${dispute.id} status=${dispute.status}`
+    : "Select an alert to view AFASA risk or create a dispute.";
+}
+
+async function createAfasaDispute() {
+  if (!selectedAlert || !selectedAlert.id) {
+    afasaActionStatus.textContent = "Select an alert with an ID to create a dispute.";
+    return;
+  }
+  afasaActionStatus.textContent = "Creating dispute...";
+  try {
+    const res = await fetch(`${API_BASE}/afasa/disputes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        alert_id: selectedAlert.id,
+        tx_id: selectedAlert.original_tx_id || null,
+        reason_category: "FMS_DETECTED",
+        suspicion_type: selectedAlert.afasa_suspicion_type || "OTHER",
+        initiated_by: "ui_demo",
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      afasaActionStatus.textContent = data.message || "Failed to create dispute.";
+      return;
+    }
+    activeDisputeId = data.id;
+    afasaActionStatus.textContent = `Dispute ${data.id} created (status ${data.status}).`;
+    updateAfasaInfo(data);
+  } catch (err) {
+    afasaActionStatus.textContent = "Failed to create dispute.";
+    console.error(err);
+  }
+}
+
+async function holdAfasaDispute() {
+  if (!activeDisputeId) {
+    afasaActionStatus.textContent = "Create a dispute first.";
+    return;
+  }
+  afasaActionStatus.textContent = "Applying hold...";
+  try {
+    const res = await fetch(`${API_BASE}/afasa/disputes/${activeDisputeId}/hold`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actor: "ui_demo" }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      afasaActionStatus.textContent = data.message || "Hold failed.";
+      return;
+    }
+    afasaActionStatus.textContent = `Hold applied (status ${data.status}).`;
+    updateAfasaInfo(data);
+  } catch (err) {
+    afasaActionStatus.textContent = "Hold failed.";
+    console.error(err);
+  }
+}
+
+async function releaseAfasaDispute() {
+  if (!activeDisputeId) {
+    afasaActionStatus.textContent = "Create a dispute first.";
+    return;
+  }
+  afasaActionStatus.textContent = "Releasing...";
+  try {
+    const res = await fetch(`${API_BASE}/afasa/disputes/${activeDisputeId}/release`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "RELEASE", actor: "ui_demo" }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      afasaActionStatus.textContent = data.message || "Release failed.";
+      return;
+    }
+    afasaActionStatus.textContent = `Released dispute ${data.id}.`;
+    updateAfasaInfo(data);
+  } catch (err) {
+    afasaActionStatus.textContent = "Release failed.";
+    console.error(err);
+  }
+}
+
 if (loadDeviceBtn) {
   loadDeviceBtn.addEventListener("click", () => {
     const devId = deviceSearch ? deviceSearch.value.trim() : "";
@@ -786,6 +891,10 @@ if (loadDeviceBtn) {
     loadGraphForSelected();
   });
 }
+
+if (afasaCreateBtn) afasaCreateBtn.addEventListener("click", createAfasaDispute);
+if (afasaHoldBtn) afasaHoldBtn.addEventListener("click", holdAfasaDispute);
+if (afasaReleaseBtn) afasaReleaseBtn.addEventListener("click", releaseAfasaDispute);
 
 updateSelectionInfo();
 fetchAlerts();

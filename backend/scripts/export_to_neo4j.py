@@ -99,7 +99,8 @@ def export_accounts_devices(engine, driver):
 
 def export_transactions(engine, driver):
     with engine.connect() as conn:
-        tx_rows = conn.execute(
+        tx_rows = list(
+            conn.execute(
             text(
                 """
                 SELECT t.tx_ref,
@@ -115,7 +116,48 @@ def export_transactions(engine, driver):
                 JOIN graph_accounts ta ON ta.id = t.to_account_id
                 """
             )
-        ).mappings()
+            ).mappings()
+        )
+        # Persist to transaction_logs for BSP 1213 alignment
+        for row in tx_rows:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO transaction_logs (
+                        tx_reference, sender_account_id, receiver_account_id,
+                        amount, currency, tx_datetime, ofi, rfi, channel,
+                        auth_method, device_fingerprint, device_details,
+                        ip_address, browser_user_agent, non_financial_action,
+                        network_reference, created_at
+                    ) VALUES (
+                        :tx_reference, :sender_account_id, :receiver_account_id,
+                        :amount, :currency, :tx_datetime, :ofi, :rfi, :channel,
+                        :auth_method, :device_fingerprint, :device_details,
+                        :ip_address, :browser_user_agent, :non_financial_action,
+                        :network_reference, NOW()
+                    )
+                    ON CONFLICT (tx_reference) DO NOTHING
+                    """
+                ),
+                {
+                    "tx_reference": row["tx_ref"],
+                    "sender_account_id": row["from_acct"],
+                    "receiver_account_id": row["to_acct"],
+                    "amount": row["amount"],
+                    "currency": "PHP",
+                    "tx_datetime": row["timestamp"],
+                    "ofi": "GCASH_CORE",
+                    "rfi": "GCASH_CORE",
+                    "channel": row["channel"],
+                    "auth_method": "OTP_SMS",
+                    "device_fingerprint": None,
+                    "device_details": None,
+                    "ip_address": None,
+                    "browser_user_agent": None,
+                    "non_financial_action": None,
+                    "network_reference": row["tags"],
+                },
+            )
 
     with driver.session() as session:
         for batch in chunk(tx_rows, BATCH_SIZE):

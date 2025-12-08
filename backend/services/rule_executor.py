@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import datetime
 from sqlalchemy import select
 
 from backend.db.session import get_session
@@ -8,11 +9,13 @@ from backend.models import (
     RuleDefinition,
     Account,
     Device,
+    TransactionLog,
 )
 from backend.models.alert import STATUS_VALUES
-from . import neo4j_client_mock
 from backend.services.faf_engine import evaluate_account
 from backend.services.feature_builder import build_features_for_account
+from backend.afasa.services import evaluate_and_tag_alert
+from backend.services.neo4j_client import get_driver
 
 
 def _get_or_create_account(session, account_number: str, customer_name: str):
@@ -52,6 +55,115 @@ def _get_or_create_rule_by_key(session, rule_key: str, severity: str, descriptio
     return rule
 
 
+def _neo4j_mule_detections(limit: int = 20):
+    """
+    Pull high-risk accounts from Neo4j (using :Mule nodes) instead of mock data.
+    """
+    cypher = """
+    MATCH (a:Mule)
+    RETURN
+      a.id   AS accountId,
+      coalesce(a.name, a.id) AS customerName,
+      1.0    AS riskScore,
+      true   AS isFraud
+    ORDER BY accountId
+    LIMIT $limit
+    """
+    with get_driver() as driver:
+        with driver.session() as session:
+            result = session.run(cypher, limit=limit)
+            detections = []
+            for record in result:
+                data = record.data()
+                acct = data.get("accountId")
+                data["summary"] = f"Mule-like account {acct} detected in Neo4j"
+                data["severity"] = "CRITICAL"
+                detections.append(data)
+            return detections
+
+
+def _neo4j_identity_detections(limit: int = 10, min_risky: int = 2):
+    """
+    Detect shared identifiers used by multiple risky accounts.
+    """
+    cypher = """
+    MATCH (id)<-[:HAS_EMAIL|HAS_PHONE|HAS_SSN]-(risky:Mule)
+    WITH id, collect(DISTINCT risky) AS riskyAccounts, size(collect(DISTINCT risky)) AS riskyCount
+    WHERE riskyCount >= $minRiskyAccounts
+    MATCH (id)<-[:HAS_EMAIL|HAS_PHONE|HAS_SSN]-(acc)
+    WITH id, riskyCount, collect(DISTINCT acc) AS allAccounts
+    RETURN
+      CASE
+        WHEN id.email IS NOT NULL THEN id.email
+        WHEN id.phoneNumber IS NOT NULL THEN id.phoneNumber
+        ELSE id.ssn
+      END AS deviceId,
+      head(allAccounts) AS anchor,
+      riskyCount AS riskyAccounts,
+      size(allAccounts) AS totalAccounts
+    ORDER BY riskyAccounts DESC, totalAccounts DESC
+    LIMIT $limit
+    """
+    with get_driver() as driver:
+        with driver.session() as session:
+            result = session.run(
+                cypher,
+                minRiskyAccounts=min_risky,
+                limit=limit,
+            )
+            detections = []
+            for record in result:
+                anchor = record["anchor"] or {}
+                detections.append(
+                    {
+                        "subject_account_number": anchor.get("account_number") or anchor.get("id"),
+                        "subject_customer_name": anchor.get("customer_name") or anchor.get("name") or anchor.get("id"),
+                        "severity": "HIGH",
+                        "summary": f"Shared identifier {record['deviceId']} used by {record['totalAccounts']} accounts",
+                        "linked_devices": [{"device_id": record["deviceId"], "device_type": "Identifier"}],
+                        "details": {
+                            "pattern": "shared_identifier",
+                            "risky_accounts": record["riskyAccounts"],
+                            "total_accounts": record["totalAccounts"],
+                        },
+                    }
+                )
+            return detections
+
+
+def _ensure_transaction_log(session, detection: dict) -> TransactionLog:
+    """
+    Create a TransactionLog entry for detections that provide tx metadata.
+    This keeps the demo aligned with BSP logging expectations.
+    """
+    tx_ref = detection.get("tx_ref") or detection.get("tx_reference")
+    if not tx_ref:
+        return None
+    tx = session.execute(select(TransactionLog).where(TransactionLog.tx_reference == tx_ref)).scalar_one_or_none()
+    if tx:
+        return tx
+    tx = TransactionLog(
+        tx_reference=tx_ref,
+        sender_account_id=detection.get("subject_account_number") or "UNKNOWN",
+        receiver_account_id=detection.get("linked_accounts", [{}])[0].get("account_number") if detection.get("linked_accounts") else "UNKNOWN",
+        amount=detection.get("amount") or 0,
+        currency=detection.get("currency") or "PHP",
+        tx_datetime=detection.get("tx_datetime") or datetime.utcnow(),
+        ofi=detection.get("ofi"),
+        rfi=detection.get("rfi"),
+        channel=detection.get("channel") or "MOBILE_APP",
+        auth_method=detection.get("auth_method") or "OTP_SMS",
+        device_fingerprint=detection.get("device_id"),
+        ip_address=detection.get("ip_address"),
+        browser_user_agent=detection.get("browser_user_agent"),
+        non_financial_action=detection.get("non_financial_action"),
+        network_reference=detection.get("network_reference"),
+    )
+    session.add(tx)
+    session.flush()
+    return tx
+
+
 def refresh_alerts(rule_id: Optional[int] = None, neo4j_driver=None) -> int:
     session = get_session()
     try:
@@ -63,12 +175,22 @@ def refresh_alerts(rule_id: Optional[int] = None, neo4j_driver=None) -> int:
         faf_accounts = set()
 
         for rule in rules:
-            detections = neo4j_client_mock.run_rule(rule)
+            detections = []
+            rule_name = (rule.name or "").lower()
+            if "mule" in rule_name:
+                detections = _neo4j_mule_detections(limit=20)
+            elif "identity" in rule_name:
+                detections = _neo4j_identity_detections(limit=20)
+            else:
+                continue
+
             for detection in detections:
+                account_number = detection.get("subject_account_number") or detection.get("accountId")
+                customer_name = detection.get("subject_customer_name") or detection.get("customerName") or "Unknown"
                 subject_account = _get_or_create_account(
                     session,
-                    detection.get("subject_account_number"),
-                    detection.get("subject_customer_name", "Unknown"),
+                    account_number,
+                    customer_name,
                 )
 
                 linked_devices_data = detection.get("linked_devices", [])
@@ -95,6 +217,8 @@ def refresh_alerts(rule_id: Optional[int] = None, neo4j_driver=None) -> int:
                     linked_devices=linked_devices_data,
                 )
                 session.add(case)
+                tx_log = _ensure_transaction_log(session, detection)
+                evaluate_and_tag_alert(session, alert, tx_ref=detection.get("tx_ref"), tx_id=tx_log.id if tx_log else None)
                 generated += 1
 
                 if subject_account.account_number:
@@ -132,6 +256,7 @@ def refresh_alerts(rule_id: Optional[int] = None, neo4j_driver=None) -> int:
                     linked_devices=[],
                 )
                 session.add(case)
+                evaluate_and_tag_alert(session, alert, tx_ref=cand.anchor_id if cand.anchor_type == "TRANSACTION" else None)
                 generated += 1
         session.commit()
         return generated

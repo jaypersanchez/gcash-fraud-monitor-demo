@@ -58,6 +58,9 @@ def list_alerts():
                     "severity": alert.severity,
                     "status": alert.status,
                     "summary": alert.summary,
+                    "is_afasa": alert.is_afasa,
+                    "afasa_suspicion_type": alert.afasa_suspicion_type,
+                    "afasa_risk_score": alert.afasa_risk_score,
                     "created_at": alert.created_at.isoformat() if alert.created_at else None,
                 }
             )
@@ -82,6 +85,9 @@ def get_alert(alert_id: int):
             "status": alert.status,
             "summary": alert.summary,
             "details": alert.details,
+            "is_afasa": alert.is_afasa,
+            "afasa_suspicion_type": alert.afasa_suspicion_type,
+            "afasa_risk_score": alert.afasa_risk_score,
             "created_at": alert.created_at.isoformat() if alert.created_at else None,
             "updated_at": alert.updated_at.isoformat() if alert.updated_at else None,
         }

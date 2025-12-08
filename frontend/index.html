@@ -46,6 +46,19 @@
                 <button class="btn btn-secondary" id="flag-device">Flag Device</button>
               </div>
               <div id="action-status" class="muted" style="margin-top:8px;"></div>
+              <div class="card" style="margin-top:8px; background:#fff; border:1px solid #e1e9f5;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                  <h4 style="margin:0; font-size:14px;">AFASA Actions</h4>
+                  <span id="afasa-status" class="muted" style="font-size:12px;">No AFASA data</span>
+                </div>
+                <div class="muted" id="afasa-details" style="font-size:12px; margin-bottom:6px;">Select an alert to view AFASA risk.</div>
+                <div class="grid-two" style="gap:8px; margin-top:4px;">
+                  <button class="btn btn-secondary" id="afasa-create">Create Dispute</button>
+                  <button class="btn btn-secondary" id="afasa-hold">Apply Hold</button>
+                  <button class="btn btn-secondary" id="afasa-release">Release</button>
+                </div>
+                <div id="afasa-action-status" class="muted" style="margin-top:6px; font-size:12px;"></div>
+              </div>
               <div class="grid-two" style="gap: 8px; margin-top:8px;">
                 <input id="device-search" type="text" placeholder="Device ID (e.g., MULE-DEV-00001)" style="padding:8px; border-radius:8px; border:1px solid #e1e9f5; width:100%;" />
                 <button class="btn btn-secondary" id="load-device">Load Device Graph</button>

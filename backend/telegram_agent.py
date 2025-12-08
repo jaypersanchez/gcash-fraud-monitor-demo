@@ -57,7 +57,15 @@ def format_alert(a: dict) -> str:
     sev = a.get("severity") or ""
     anchor = a.get("accountId") or a.get("deviceId") or ""
     prefix = "[FAF] " if rule.startswith("FAF-") else ""
-    return f"• [{sev}] {prefix}{rule}: {summary}\n    anchor: {anchor}"
+    afasa = ""
+    suspicion = a.get("afasa_suspicion_type") or a.get("suspicion_type")
+    risk = a.get("afasa_risk_score")
+    if suspicion or risk:
+        afasa = f"\n    AFASA: {suspicion or 'suspected'}, risk={risk if risk is not None else 'n/a'}"
+    actions = ""
+    if a.get("id"):
+        actions = f"\n    /afasa_dispute {a['id']}  | /afasa_hold <dispute_id> | /afasa_release <dispute_id> OK"
+    return f"• [{sev}] {prefix}{rule}: {summary}\n    anchor: {anchor}{afasa}{actions}"
 
 
 def main():
