@@ -312,9 +312,15 @@ async function loadGraphForSelected() {
   const paramsDisplay = lastParams ? ` (filters: ${lastParams})` : "";
   neoStatus.textContent = `Loading graph for ${anchor} (${ruleLabel})${paramsDisplay}...`;
   try {
-    const endpoint = selectedAnchorType === "DEVICE" ? "/neo4j/graph/identifier/" : "/neo4j/graph/account/";
-    const res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
-    const data = await res.json();
+    let endpoint = selectedAnchorType === "DEVICE" ? "/neo4j/graph/identifier/" : "/neo4j/graph/account/";
+    let res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
+    let data = await res.json();
+    if (!res.ok && selectedAnchorType === "DEVICE") {
+      // Fallback to device graph endpoint if identifier lookup fails
+      endpoint = "/neo4j/graph/device/";
+      res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
+      data = await res.json();
+    }
     if (!res.ok) {
       neoStatus.textContent = data.message || "Graph load failed.";
       return;
