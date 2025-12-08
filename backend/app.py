@@ -456,8 +456,9 @@ def fetch_progressive_chain_r8(tx, name: str, duration: int, amount: float, min_
     """
     min_hops = max(1, min_hops)
     max_hops = max(min_hops, min(max_hops, 15))
+    name_filter = " {name: $name}" if name else ""
     cypher = f"""
-    MATCH p=(c1:Client {{name: $name}})
+    MATCH p=(c1:Client{name_filter})
     (
       (:Client)-[t1:TRANSACTED_WITH]->(:Client)-[t2:TRANSACTED_WITH]->(:Client)
       WHERE t1.globalStep + $duration > t2.globalStep > t1.globalStep
@@ -501,8 +502,9 @@ def fetch_cycle_r9(tx, name: str, min_amount: float, min_hops: int, max_hops: in
     """
     min_hops = max(1, min_hops)
     max_hops = max(min_hops, min(max_hops, 15))
+    name_filter = " {name: $name}" if name else ""
     cypher = f"""
-    MATCH p=(c:Client {{name: $name}})-[r:TRANSACTED_WITH WHERE r.amount > $minAmount]->{{{min_hops},{max_hops}}}(c)
+    MATCH p=(c:Client{name_filter})-[r:TRANSACTED_WITH WHERE r.amount > $minAmount]->{{{min_hops},{max_hops}}}(c)
     RETURN p
     LIMIT $limit
     """
@@ -536,8 +538,9 @@ def fetch_progressive_high_value_r10(tx, name: str, min_amount: float, min_hops:
     """
     min_hops = max(1, min_hops)
     max_hops = max(min_hops, min(max_hops, 15))
+    name_filter = " {name: $name}" if name else ""
     cypher = f"""
-    MATCH p=(c:Client {{name: $name}})
+    MATCH p=(c:Client{name_filter})
     (
       (:Client)-[r1:TRANSACTED_WITH]->(:Client)-[r2:TRANSACTED_WITH]->(:Client)
       WHERE r2.globalStep > r1.globalStep
