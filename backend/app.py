@@ -984,11 +984,8 @@ def create_app():
             anchor_id = (rec.get("accountId") or rec.get("deviceId"))
             if not anchor_id:
                 return False
-            # Neo4j-level flag (isFraud/flagged) or locally flagged in Postgres
-            if str(rec.get("isFraud")).lower() == "true":
-                return True
-            if rec.get("flagged") is True:
-                return True
+            # For Search & Destroy, only honor local flags (investigator_actions);
+            # do not suppress based on Neo4j isFraud/flagged so we can surface candidates.
             return is_locally_flagged(anchor_id, anchor_type)
 
             # R1
