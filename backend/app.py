@@ -950,8 +950,8 @@ def create_app():
             limit = int(request.args.get("limit", 20))
         except Exception:
             limit = 20
-        # Search & Destroy runs all R rules by default; exclude already flagged
-        exclude_flagged = True
+        # Search & Destroy runs all R rules by default; include flagged to surface Neo4j detections
+        exclude_flagged = False
         include_temporal = True
         name_param = request.args.get("name", "Aubree David")
         try:
