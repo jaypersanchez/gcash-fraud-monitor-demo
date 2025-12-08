@@ -609,6 +609,7 @@ function updateSelectionInfo() {
   }
   updateAfasaInfo();
   renderContext();
+  updateFlagButtonsVisibility();
 }
 
 function currentAnchorKey() {
@@ -918,3 +919,11 @@ if (afasaReleaseBtn) afasaReleaseBtn.addEventListener("click", releaseAfasaDispu
 
 updateSelectionInfo();
 fetchAlerts();
+
+function updateFlagButtonsVisibility() {
+  const ruleLabel = selectedRuleKey || getRule();
+  const isSearchAndDestroy = ruleLabel === "ALL";
+  const displayStyle = isSearchAndDestroy ? "inline-block" : "none";
+  if (flagAccountBtn) flagAccountBtn.style.display = displayStyle;
+  if (flagDeviceBtn) flagDeviceBtn.style.display = displayStyle;
+}
