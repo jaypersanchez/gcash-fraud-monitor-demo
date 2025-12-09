@@ -914,10 +914,13 @@ function updateFlagButtonsVisibility() {
     flagUnifiedBtn.style.display = displayStyle;
     flagUnifiedBtn.disabled = !shouldEnableFlag;
   }
-  // In Search & Destroy, hide AFASA actions to reduce confusion
+  // In Search & Destroy, show AFASA panel but disable AFASA buttons
   const afasaSection = document.getElementById("afasa-panel");
   if (afasaSection) {
-    afasaSection.style.display = isSearchAndDestroy ? "none" : "block";
+    afasaSection.style.display = "block";
+    if (afasaCreateBtn) afasaCreateBtn.disabled = isSearchAndDestroy;
+    if (afasaHoldBtn) afasaHoldBtn.disabled = isSearchAndDestroy;
+    if (afasaReleaseBtn) afasaReleaseBtn.disabled = isSearchAndDestroy;
   }
 }
 
