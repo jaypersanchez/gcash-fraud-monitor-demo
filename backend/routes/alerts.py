@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request, abort
 from sqlalchemy import select, case, desc
 
 from backend.db.session import get_session
-from backend.models import Alert, RuleDefinition, Case
+from backend.models import Alert, RuleDefinition, Case, Account
 from backend.services.rule_executor import refresh_alerts
 
 alerts_bp = Blueprint("alerts", __name__)
@@ -26,6 +26,7 @@ def run_alerts_refresh():
 @alerts_bp.route("/alerts", methods=["GET"])
 def list_alerts():
     status_filter = request.args.get("status")
+    family_filter = request.args.get("family")
     session = get_session()
     try:
         severity_order = case(
@@ -35,23 +36,33 @@ def list_alerts():
             else_=1,
         )
         query = (
-            select(Alert, RuleDefinition.name)
+            select(Alert, RuleDefinition.name, Account.account_number)
             .join(RuleDefinition, Alert.rule_id == RuleDefinition.id)
+            .join(Account, Alert.subject_account_id == Account.id, isouter=True)
             .order_by(desc(severity_order), Alert.created_at.desc())
         )
         if status_filter:
             query = query.where(Alert.status == status_filter)
+        if family_filter and family_filter.upper() == "FAF":
+            query = query.where(RuleDefinition.name.like("FAF-%"))
+        # Always hide legacy GCASH-seeded alerts; UI should reflect Neo4j-driven anchors only
+        query = query.where((Account.account_number.is_(None)) | (~Account.account_number.like("GCASH-%")))
 
         results = session.execute(query).all()
         alerts = []
-        for alert, rule_name in results:
+        for alert, rule_name, account_number in results:
             alerts.append(
                 {
                     "id": alert.id,
                     "rule_name": rule_name,
+                    "ruleKey": rule_name,
+                    "accountId": account_number,
                     "severity": alert.severity,
                     "status": alert.status,
                     "summary": alert.summary,
+                    "is_afasa": alert.is_afasa,
+                    "afasa_suspicion_type": alert.afasa_suspicion_type,
+                    "afasa_risk_score": alert.afasa_risk_score,
                     "created_at": alert.created_at.isoformat() if alert.created_at else None,
                 }
             )
@@ -76,6 +87,9 @@ def get_alert(alert_id: int):
             "status": alert.status,
             "summary": alert.summary,
             "details": alert.details,
+            "is_afasa": alert.is_afasa,
+            "afasa_suspicion_type": alert.afasa_suspicion_type,
+            "afasa_risk_score": alert.afasa_risk_score,
             "created_at": alert.created_at.isoformat() if alert.created_at else None,
             "updated_at": alert.updated_at.isoformat() if alert.updated_at else None,
         }

@@ -1,9 +1,10 @@
 from datetime import datetime
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, JSON, String, Text, Boolean
 from sqlalchemy.orm import relationship
 
 from .base import Base
 from .rule_definition import RuleDefinition, SEVERITY_LEVELS
+from backend.afasa.constants import SUSPICION_TYPES
 
 STATUS_VALUES = ("OPEN", "IN_PROGRESS", "RESOLVED")
 
@@ -18,6 +19,9 @@ class Alert(Base):
     status = Column(Enum(*STATUS_VALUES, name="alert_status", create_constraint=False), nullable=False, default="OPEN")
     summary = Column(Text, nullable=False)
     details = Column(JSON, nullable=True)
+    is_afasa = Column(Boolean, default=False, nullable=False)
+    afasa_suspicion_type = Column(Enum(*SUSPICION_TYPES, name="afasa_alert_suspicion", create_constraint=False), nullable=True)
+    afasa_risk_score = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 

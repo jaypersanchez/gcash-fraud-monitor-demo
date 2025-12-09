@@ -1,0 +1,27 @@
+@startuml
+title AFASA Dispute & Temporary Hold Flow
+actor Customer
+participant "GCash Core Systems\n(simulated)" as Core
+participant "Fraud Monitoring\n(this app)" as FMS
+participant "Other BFI\n(simulated)" as BFI
+participant "BSP / CAPO\n(conceptual)" as BSP
+
+Customer -> Core : Initiates transfer
+Core -> FMS : Send transaction log + auth/device details
+FMS -> FMS : FAF/AFASA rules evaluate (money mule / social engineering)
+FMS -> FMS : Create Alert + AFASA risk tag\n(optional auto-dispute PENDING_HOLD)
+FMS -> Customer : Notify of verification (via app/OTP)
+Customer --> FMS : Confirms/denies transaction\n(CUSTOMER_RESPONSE event)
+FMS -> BFI : Send dispute notice / freeze request\n(OTHER_BFI_CONTACTED event)
+BFI --> FMS : Responds (hold/confirm/release)\n(OTHER_BFI_RESPONSE event)
+FMS -> FMS : Apply temporary hold (max 30 days)\nTrack hold_start/max_hold_until
+FMS -> BSP : Provide dispute chain + time logs\n(BSP_QUERY / periodic reporting)
+FMS -> Customer : Outcome (released / restituted)
+FMS -> BFI : Coordinate restitution or release
+FMS -> FMS : Close dispute (RELEASED / WRITTEN_OFF / ESCALATED)
+note right of FMS
+ - All actions logged as AfasaVerificationEvent
+ - Transaction chain preserved for audit
+ - Reports support BSP/LEA sharing
+end note
+@enduml

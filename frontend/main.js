@@ -8,6 +8,7 @@ const API_BASE =
 const alertsBody = document.getElementById("alerts-body");
 const alertsEmpty = document.getElementById("alerts-empty");
 const refreshBtn = document.getElementById("refresh-alerts");
+const refreshApiBtn = document.getElementById("refresh-alerts-api");
 const alertsNav = document.getElementById("alerts-nav");
 const alertsSection = document.getElementById("alerts-section");
 const alertsStatus = document.getElementById("alerts-status");
@@ -20,15 +21,15 @@ const limitInput = document.getElementById("limitInput");
 const riskValue = document.getElementById("riskValue");
 const ruleSelect = document.getElementById("ruleSelect");
 const minRiskyInput = document.getElementById("minRisky");
-const hideFlaggedCheckbox = document.getElementById("hideFlagged");
-const includeTemporalCheckbox = document.getElementById("includeTemporal");
-const temporalNameInput = document.getElementById("temporalName");
-const temporalDurationInput = document.getElementById("temporalDuration");
-const temporalAmountInput = document.getElementById("temporalAmount");
-const temporalMinAmountInput = document.getElementById("temporalMinAmount");
+const hideFlaggedCheckbox = null;
+const includeTemporalCheckbox = null;
+const fafOnlyCheckbox = null;
+const temporalNameInput = null;
+const temporalDurationInput = null;
+const temporalAmountInput = null;
+const temporalMinAmountInput = null;
 const selectionInfo = document.getElementById("selection-info");
-const flagAccountBtn = document.getElementById("flag-account");
-const flagDeviceBtn = document.getElementById("flag-device");
+const flagUnifiedBtn = document.getElementById("flag-unified");
 const loadDeviceBtn = document.getElementById("load-device");
 const deviceSearch = document.getElementById("device-search");
 const actionStatus = document.getElementById("action-status");
@@ -45,6 +46,12 @@ const caseActionStatus = document.getElementById("case-action-status");
 const caseBlockBtn = document.getElementById("case-block");
 const caseSafeBtn = document.getElementById("case-safe");
 const caseEscalateBtn = document.getElementById("case-escalate");
+const afasaStatus = document.getElementById("afasa-status");
+const afasaDetails = document.getElementById("afasa-details");
+const afasaCreateBtn = document.getElementById("afasa-create");
+const afasaHoldBtn = document.getElementById("afasa-hold");
+const afasaReleaseBtn = document.getElementById("afasa-release");
+const afasaActionStatus = document.getElementById("afasa-action-status");
 
 let alertsCache = [];
 let selectedAccountId = null;
@@ -56,6 +63,7 @@ let selectedAlert = null;
 const notesByAnchor = {};
 const actionsByAnchor = {};
 let graphTooltip = null;
+let activeDisputeId = null;
 
 const severityClass = (severity) => {
   const map = {
@@ -75,8 +83,8 @@ function getRule() {
 }
 
 function getRiskThreshold() {
-  if (riskSlider) return parseFloat(riskSlider.value) || 0.8;
-  return 0.8;
+  if (riskSlider) return parseFloat(riskSlider.value) || 0.1;
+  return 0.1;
 }
 
 function getLimit() {
@@ -91,17 +99,18 @@ function getMinRisky() {
 
 function temporalParams() {
   return {
-    name: (temporalNameInput && temporalNameInput.value) || "Aubree David",
-    duration: temporalDurationInput ? parseInt(temporalDurationInput.value || "6500", 10) : 6500,
-    amount: temporalAmountInput ? parseFloat(temporalAmountInput.value || "50000") : 50000,
-    minAmount: temporalMinAmountInput ? parseFloat(temporalMinAmountInput.value || "1200000") : 1200000,
+    name: "",
+    duration: 0,
+    amount: 0,
+    minAmount: 0,
   };
 }
 
 async function fetchAlerts() {
   setLoadingState(true);
   const rule = getRule();
-  const isTemporalRule = rule === "R8" || rule === "R9" || rule === "R10" || (rule === "ALL" && includeTemporalCheckbox && includeTemporalCheckbox.checked);
+  const fafOnly = false;
+  const isTemporalRule = rule === "R8" || rule === "R9" || rule === "R10";
   if (alertsStatus && isTemporalRule) {
     alertsStatus.textContent = "Running temporal query… this may take a few seconds for long paths.";
   } else if (alertsStatus) {
@@ -119,28 +128,23 @@ async function fetchAlerts() {
     params.append("minRiskyAccounts", getMinRisky());
   }
   params.append("limit", getLimit());
-  if (rule === "ALL") {
-    params.append("excludeFlagged", hideFlaggedCheckbox && hideFlaggedCheckbox.checked ? "true" : "false");
-    if (includeTemporalCheckbox && includeTemporalCheckbox.checked) {
-      params.append("includeTemporal", "true");
-    }
-  }
-  if (rule === "R8" || rule === "R9" || rule === "R10") {
-    const t = temporalParams();
-    params.append("name", t.name);
-    params.append("duration", t.duration);
-    params.append("amount", t.amount);
-    params.append("minAmount", t.minAmount);
-  }
+  // Search & Destroy now runs all R rules by default on the backend; no extra params here.
+  // R8-R10 temporal params removed from UI; backend uses defaults
   lastParams = params.toString();
   let endpoint = "/neo-alerts/r1";
-  if (rule === "R2") endpoint = "/neo-alerts/r2";
-  if (rule === "R3") endpoint = "/neo-alerts/r3";
-  if (rule === "R7") endpoint = "/neo-alerts/r7";
-  if (rule === "ALL") endpoint = "/neo-alerts/search";
-  if (rule === "R8") endpoint = "/neo-alerts/r8";
-  if (rule === "R9") endpoint = "/neo-alerts/r9";
-  if (rule === "R10") endpoint = "/neo-alerts/r10";
+  if (fafOnly) {
+    endpoint = "/alerts?family=FAF";
+    params.delete("riskThreshold");
+    params.delete("minRiskyAccounts");
+  } else {
+    if (rule === "R2") endpoint = "/neo-alerts/r2";
+    if (rule === "R3") endpoint = "/neo-alerts/r3";
+    if (rule === "R7") endpoint = "/neo-alerts/r7";
+    if (rule === "ALL") endpoint = "/neo-alerts/search";
+    if (rule === "R8") endpoint = "/neo-alerts/r8";
+    if (rule === "R9") endpoint = "/neo-alerts/r9";
+    if (rule === "R10") endpoint = "/neo-alerts/r10";
+  }
     const res = await fetch(`${API_BASE}${endpoint}?${params.toString()}`);
     const data = await res.json();
     renderAlerts(data);
@@ -149,6 +153,7 @@ async function fetchAlerts() {
       const anchorRule = first.ruleKey || rule;
       selectedAlert = first;
       selectedRuleKey = anchorRule;
+      updateFlagButtonsVisibility();
       if (anchorRule === "R2") {
         selectedDeviceId = first.deviceId;
         selectedAccountId = null;
@@ -189,11 +194,15 @@ function renderAlerts(alerts) {
             .join(" · ")
         : "";
     const displaySummary = temporalMeta ? `${alert.summary} (${temporalMeta})` : alert.summary;
+    const afasaBadge =
+      alert.afasa_risk_score || alert.afasa_suspicion_type
+        ? `<span class="status-chip" style="background:#ffe9d6;color:#a65b00;">AFASA ${alert.afasa_suspicion_type || ""} (${alert.afasa_risk_score || "n/a"})</span>`
+        : "";
     row.innerHTML = `
       <td><span class="badge ${severityClass(alert.severity)}">${alert.severity}</span></td>
       <td class="muted">#${alert.id}</td>
       <td>${alert.rule || "Account Risk"}</td>
-      <td>${displaySummary}</td>
+      <td>${displaySummary} ${afasaBadge}</td>
       <td><span class="status-chip">${alert.status}</span></td>
       <td class="muted">${alert.created ? new Date(alert.created).toLocaleString() : ""}</td>
     `;
@@ -245,6 +254,25 @@ function setLoadingState(isLoading) {
 }
 
 refreshBtn.addEventListener("click", refreshAlerts);
+if (refreshApiBtn) {
+  refreshApiBtn.addEventListener("click", async () => {
+    refreshApiBtn.textContent = "Refreshing via API...";
+    refreshApiBtn.disabled = true;
+    try {
+      const res = await fetch(`${API_BASE}/alerts/refresh`, { method: "POST" });
+      const data = await res.json();
+      const generated = data.generated_alerts || 0;
+      if (alertsStatus) alertsStatus.textContent = `Refresh completed. Generated ${generated} alert(s).`;
+      await fetchAlerts();
+    } catch (err) {
+      if (alertsStatus) alertsStatus.textContent = "Refresh failed.";
+      console.error(err);
+    } finally {
+      refreshApiBtn.textContent = "Refresh Alerts (API)";
+      refreshApiBtn.disabled = false;
+    }
+  });
+}
 
 alertsNav.addEventListener("click", () => {
   alertsSection.scrollIntoView({ behavior: "smooth" });
@@ -284,9 +312,15 @@ async function loadGraphForSelected() {
   const paramsDisplay = lastParams ? ` (filters: ${lastParams})` : "";
   neoStatus.textContent = `Loading graph for ${anchor} (${ruleLabel})${paramsDisplay}...`;
   try {
-    const endpoint = selectedAnchorType === "DEVICE" ? "/neo4j/graph/identifier/" : "/neo4j/graph/account/";
-    const res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
-    const data = await res.json();
+    let endpoint = selectedAnchorType === "DEVICE" ? "/neo4j/graph/identifier/" : "/neo4j/graph/account/";
+    let res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
+    let data = await res.json();
+    if (!res.ok && selectedAnchorType === "DEVICE") {
+      // Fallback to device graph endpoint if identifier lookup fails
+      endpoint = "/neo4j/graph/device/";
+      res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
+      data = await res.json();
+    }
     if (!res.ok) {
       neoStatus.textContent = data.message || "Graph load failed.";
       return;
@@ -568,7 +602,9 @@ function updateSelectionInfo() {
     const noun = selectedAnchorType === "DEVICE" ? "identifier" : "account";
     selectionInfo.textContent = anchor ? `Selected ${noun} ${anchor} (${ruleLabel})` : "No selection yet.";
   }
+  updateAfasaInfo();
   renderContext();
+  updateFlagButtonsVisibility();
 }
 
 function currentAnchorKey() {
@@ -608,11 +644,8 @@ async function flagAnchor() {
   }
 }
 
-if (flagAccountBtn) {
-  flagAccountBtn.addEventListener("click", flagAnchor);
-}
-if (flagDeviceBtn) {
-  flagDeviceBtn.addEventListener("click", flagAnchor);
+if (flagUnifiedBtn) {
+  flagUnifiedBtn.addEventListener("click", flagAnchor);
 }
 
 if (addNoteBtn) {
@@ -764,20 +797,183 @@ if (caseBlockBtn) caseBlockBtn.addEventListener("click", () => handleCaseAction(
 if (caseSafeBtn) caseSafeBtn.addEventListener("click", () => handleCaseAction("SAFE"));
 if (caseEscalateBtn) caseEscalateBtn.addEventListener("click", () => handleCaseAction("ESCALATE"));
 
-if (loadDeviceBtn) {
-  loadDeviceBtn.addEventListener("click", () => {
-    const devId = deviceSearch ? deviceSearch.value.trim() : "";
-    if (!devId) {
-      if (actionStatus) actionStatus.textContent = "Enter a device ID.";
+function updateAfasaInfo(dispute) {
+  if (!afasaStatus || !afasaDetails) return;
+  const alert = selectedAlert;
+  const suspicion = (alert && (alert.afasa_suspicion_type || alert.suspicion_type)) || "n/a";
+  const risk = (alert && (alert.afasa_risk_score || alert.riskScore)) || "n/a";
+  afasaStatus.textContent = alert ? `Suspicion: ${suspicion} | Risk: ${risk}` : "No AFASA data";
+  afasaDetails.textContent = dispute
+    ? `Dispute #${dispute.id} status=${dispute.status}`
+    : "Select an alert to view AFASA risk or create a dispute.";
+}
+
+async function createAfasaDispute() {
+  if (!selectedAlert) {
+    afasaActionStatus.textContent = "Select an alert with an ID to create a dispute.";
+    return;
+  }
+  // Only send a real alert_id when the alert is persisted in Postgres (e.g., FAF alerts).
+  // Neo4j R* detections use synthetic IDs like "R1-1", which would FK-fail in /afasa/disputes.
+  let alertIdToSend = null;
+  const numericAlertId = Number.isInteger(selectedAlert.id)
+    ? selectedAlert.id
+    : parseInt(String(selectedAlert.id || "").replace(/\D+/g, ""), 10);
+  const isDbBackedAlert = selectedAlert.ruleKey && !selectedAlert.ruleKey.startsWith("R");
+  if (isDbBackedAlert && Number.isFinite(numericAlertId)) {
+    alertIdToSend = numericAlertId;
+  }
+  afasaActionStatus.textContent = "Creating dispute...";
+  try {
+    const res = await fetch(`${API_BASE}/afasa/disputes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        alert_id: alertIdToSend,
+        tx_id: selectedAlert.original_tx_id || null,
+        reason_category: "FMS_DETECTED",
+        suspicion_type: selectedAlert.afasa_suspicion_type || "OTHER",
+        initiated_by: "ui_demo",
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      afasaActionStatus.textContent = data.message || "Failed to create dispute.";
       return;
     }
-    selectedDeviceId = devId;
-    selectedAccountId = null;
-    selectedRuleKey = "R2";
-    updateSelectionInfo();
-    loadGraphForSelected();
+    activeDisputeId = data.id;
+    afasaActionStatus.textContent = `Dispute ${data.id} created (status ${data.status}).`;
+    updateAfasaInfo(data);
+  } catch (err) {
+    afasaActionStatus.textContent = "Failed to create dispute.";
+    console.error(err);
+  }
+}
+
+async function holdAfasaDispute() {
+  if (!activeDisputeId) {
+    afasaActionStatus.textContent = "Create a dispute first.";
+    return;
+  }
+  afasaActionStatus.textContent = "Applying hold...";
+  try {
+    const res = await fetch(`${API_BASE}/afasa/disputes/${activeDisputeId}/hold`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actor: "ui_demo" }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      afasaActionStatus.textContent = data.message || "Hold failed.";
+      return;
+    }
+    afasaActionStatus.textContent = `Hold applied (status ${data.status}).`;
+    updateAfasaInfo(data);
+  } catch (err) {
+    afasaActionStatus.textContent = "Hold failed.";
+    console.error(err);
+  }
+}
+
+async function releaseAfasaDispute() {
+  if (!activeDisputeId) {
+    afasaActionStatus.textContent = "Create a dispute first.";
+    return;
+  }
+  afasaActionStatus.textContent = "Releasing...";
+  try {
+    const res = await fetch(`${API_BASE}/afasa/disputes/${activeDisputeId}/release`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "RELEASE", actor: "ui_demo" }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      afasaActionStatus.textContent = data.message || "Release failed.";
+      return;
+    }
+    afasaActionStatus.textContent = `Released dispute ${data.id}.`;
+    updateAfasaInfo(data);
+  } catch (err) {
+    afasaActionStatus.textContent = "Release failed.";
+    console.error(err);
+  }
+}
+
+if (loadDeviceBtn) {
+  loadDeviceBtn.addEventListener("click", () => {
+    const queryText = deviceSearch ? deviceSearch.value.trim() : "";
+    if (!queryText) {
+      if (actionStatus) actionStatus.textContent = "Enter a search value.";
+      return;
+    }
+    actionStatus.textContent = "Resolving...";
+    fetch(`${API_BASE}/neo4j/resolve?q=${encodeURIComponent(queryText)}`)
+      .then((res) => res.json())
+      .then((matches) => {
+        if (!matches || !matches.length) {
+          actionStatus.textContent = "No matching nodes found in Neo4j.";
+          return;
+        }
+        const first = matches[0];
+        const anchor =
+          first.anchorId ||
+          (first.props &&
+            (first.props.accountId ||
+              first.props.deviceId ||
+              first.props.ssn ||
+              first.props.phoneNumber ||
+              first.props.email ||
+              first.props.id));
+        if (!anchor) {
+          actionStatus.textContent = "Match found but missing anchor id.";
+          return;
+        }
+        const label = (first.label || "").toUpperCase();
+        if (label.includes("DEVICE") || (first.props && first.props.deviceId)) {
+          selectedDeviceId = anchor;
+          selectedAccountId = null;
+          selectedRuleKey = "R2";
+        } else {
+          selectedAccountId = anchor;
+          selectedDeviceId = null;
+          selectedRuleKey = "R1";
+        }
+        const note = matches.length > 1 ? `Resolved to ${anchor} (showing first of ${matches.length}).` : `Resolved to ${anchor}.`;
+        actionStatus.textContent = note;
+        updateSelectionInfo();
+        loadGraphForSelected();
+      })
+      .catch((err) => {
+        console.error(err);
+        actionStatus.textContent = "Resolve failed.";
+      });
   });
 }
 
+function updateFlagButtonsVisibility() {
+  // Base flag state on dropdown rule, not clicked row, so S&D stays enabled after selection
+  const isSearchAndDestroy = getRule() === "ALL";
+  const shouldEnableFlag = isSearchAndDestroy;
+  const displayStyle = "inline-block";
+  if (flagUnifiedBtn) {
+    flagUnifiedBtn.style.display = displayStyle;
+    flagUnifiedBtn.disabled = !shouldEnableFlag;
+  }
+  // In Search & Destroy, show AFASA panel but disable AFASA buttons
+  const afasaSection = document.getElementById("afasa-panel");
+  if (afasaSection) {
+    afasaSection.style.display = "block";
+    if (afasaCreateBtn) afasaCreateBtn.disabled = isSearchAndDestroy;
+    if (afasaHoldBtn) afasaHoldBtn.disabled = isSearchAndDestroy;
+    if (afasaReleaseBtn) afasaReleaseBtn.disabled = isSearchAndDestroy;
+  }
+}
+
+if (afasaCreateBtn) afasaCreateBtn.addEventListener("click", createAfasaDispute);
+if (afasaHoldBtn) afasaHoldBtn.addEventListener("click", holdAfasaDispute);
+if (afasaReleaseBtn) afasaReleaseBtn.addEventListener("click", releaseAfasaDispute);
+
+updateFlagButtonsVisibility();
 updateSelectionInfo();
 fetchAlerts();

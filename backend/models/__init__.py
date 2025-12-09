@@ -6,6 +6,7 @@ from .case_action import CaseAction, ACTION_VALUES
 from .account import Account
 from .device import Device
 from .investigator_action import InvestigatorAction
+from .transaction import TransactionLog
 
 __all__ = [
     "Base",
@@ -19,4 +20,5 @@ __all__ = [
     "Account",
     "Device",
     "InvestigatorAction",
+    "TransactionLog",
 ]

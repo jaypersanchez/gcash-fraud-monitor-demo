@@ -33,22 +33,35 @@
             <div class="grid-two">
               <button class="btn btn-secondary" id="neo-test">Test Neo4j Connectivity</button>
               <button class="btn btn-secondary" id="load-graph">Refresh Graph</button>
+              <button class="btn btn-secondary" id="refresh-alerts-api">Refresh Alerts (API)</button>
             </div>
             <div id="neo-status" class="muted"></div>
             <div class="card" style="overflow: hidden; background: #f8fbff; border: 1px dashed #e1e9f5; min-height: 480px; height: 600px;">
               <div id="graph-container" style="width: 100%; height: 100%;"></div>
             </div>
-            <div class="card" style="background:#f8fbff;border:1px solid #e1e9f5;">
-              <h4 style="margin: 0 0 8px 0">Selection & Actions</h4>
-              <div id="selection-info" class="muted" style="margin-bottom:8px;">No selection yet.</div>
-              <div class="grid-two" style="gap: 8px;">
-                <button class="btn btn-secondary" id="flag-account">Flag Account</button>
-                <button class="btn btn-secondary" id="flag-device">Flag Device</button>
+              <div class="card" style="background:#f8fbff;border:1px solid #e1e9f5;">
+                <h4 style="margin: 0 0 8px 0">Selection & Actions</h4>
+                <div id="selection-info" class="muted" style="margin-bottom:8px;">No selection yet.</div>
+                <div class="grid-two" style="gap: 8px;">
+                  <button class="btn btn-secondary" id="flag-unified">Flag (Account or Identifier)</button>
+                </div>
+                <div id="action-status" class="muted" style="margin-top:8px;"></div>
+              <div id="afasa-panel" class="card" style="margin-top:8px; background:#fff; border:1px solid #e1e9f5;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                  <h4 style="margin:0; font-size:14px;">AFASA Actions</h4>
+                  <span id="afasa-status" class="muted" style="font-size:12px;">No AFASA data</span>
+                </div>
+                <div class="muted" id="afasa-details" style="font-size:12px; margin-bottom:6px;">Select an alert to view AFASA risk.</div>
+                <div class="grid-two" style="gap:8px; margin-top:4px;">
+                  <button class="btn btn-secondary" id="afasa-create">Create Dispute</button>
+                  <button class="btn btn-secondary" id="afasa-hold">Apply Hold</button>
+                  <button class="btn btn-secondary" id="afasa-release">Release</button>
+                </div>
+                <div id="afasa-action-status" class="muted" style="margin-top:6px; font-size:12px;"></div>
               </div>
-              <div id="action-status" class="muted" style="margin-top:8px;"></div>
               <div class="grid-two" style="gap: 8px; margin-top:8px;">
-                <input id="device-search" type="text" placeholder="Device ID (e.g., MULE-DEV-00001)" style="padding:8px; border-radius:8px; border:1px solid #e1e9f5; width:100%;" />
-                <button class="btn btn-secondary" id="load-device">Load Device Graph</button>
+                <input id="device-search" type="text" placeholder="Search name / email / SSN / device / account" style="padding:8px; border-radius:8px; border:1px solid #e1e9f5; width:100%;" />
+                <button class="btn btn-secondary" id="load-device">Search & Load Graph</button>
               </div>
             </div>
             <div class="card" style="background:#f8fbff;border:1px solid #e1e9f5;">
@@ -104,21 +117,13 @@
                     <option value="R8">R8 – Progressive chains (time window)</option>
                     <option value="R9">R9 – High-value cycles</option>
                     <option value="R10">R10 – Time-ordered high-value chains</option>
-                    <option value="ALL">Search & Destroy</option>
+                    <option value="ALL" selected>Search & Destroy</option>
                   </select>
-                  <label style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:12px; color:#627089;">
-                    <input id="hideFlagged" type="checkbox" checked />
-                    Hide already flagged (Search & Destroy)
-                  </label>
-                  <label style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:12px; color:#627089;">
-                    <input id="includeTemporal" type="checkbox" />
-                    Include temporal (R8–R10) in Search & Destroy
-                  </label>
                 </div>
                 <div class="card" style="padding:8px 12px; background:#f8fbff; border:1px solid #e1e9f5;">
                   <div style="font-size:12px; color:#627089;">Risk threshold / High risk threshold</div>
-                  <input id="riskThreshold" type="range" min="0.0" max="1.0" step="0.01" value="0.80" style="width:160px;" />
-                  <span id="riskValue" style="font-size:12px; color:#0c1a36;">0.80</span>
+                  <input id="riskThreshold" type="range" min="0.0" max="1.0" step="0.01" value="0.10" style="width:160px;" />
+                  <span id="riskValue" style="font-size:12px; color:#0c1a36;">0.10</span>
                 </div>
                 <div class="card" style="padding:8px 12px; background:#f8fbff; border:1px solid #e1e9f5;">
                   <div style="font-size:12px; color:#627089;">Min risky accounts (R2)</div>
@@ -127,15 +132,6 @@
                 <div class="card" style="padding:8px 12px; background:#f8fbff; border:1px solid #e1e9f5;">
                   <div style="font-size:12px; color:#627089;">Limit</div>
                   <input id="limitInput" type="number" min="1" value="20" style="width:80px;" />
-                </div>
-                <div class="card" style="padding:8px 12px; background:#f8fbff; border:1px solid #e1e9f5;">
-                  <div style="font-size:12px; color:#627089;">Temporal params (R8–R10)</div>
-                  <input id="temporalName" type="text" value="Aubree David" style="width:180px; margin-top:4px; padding:6px; border-radius:8px; border:1px solid #e1e9f5;" placeholder="Client name" />
-                  <div style="display:flex; gap:6px; margin-top:6px; align-items:center; font-size:12px; color:#627089;">
-                    <label>Duration</label><input id="temporalDuration" type="number" value="6500" style="width:80px;" />
-                    <label>Amt</label><input id="temporalAmount" type="number" value="50000" style="width:90px;" />
-                    <label>MinAmt</label><input id="temporalMinAmount" type="number" value="1200000" style="width:100px;" />
-                  </div>
                 </div>
                 <button class="btn" id="refresh-alerts">Refresh Alerts</button>
               </div>
