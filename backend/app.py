@@ -576,17 +576,17 @@ def fetch_progressive_high_value_r10(tx, name: str, min_amount: float, min_hops:
 
 def create_app():
     load_dotenv()
-app = Flask(__name__)
-app.config.from_object(Config)
-CORS(app)
+    app = Flask(__name__)
+    app.config.from_object(Config)
+    CORS(app)
 
-@app.after_request
-def add_cors_headers(response):
-    # Ensure all endpoints (including new ones) emit permissive CORS for local demos.
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    return response
+    @app.after_request
+    def add_cors_headers(response):
+        # Ensure all endpoints (including new ones) emit permissive CORS for local demos.
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        return response
 
     verify_database_connection()
 
@@ -1551,17 +1551,17 @@ def add_cors_headers(response):
     return app
 
 
-def init_db():
+    def init_db():
     Base.metadata.create_all(bind=engine)
     seed_data()
 
 
-def verify_database_connection():
+    def verify_database_connection():
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
 
 
-def seed_data():
+    def seed_data():
     session = get_session()
     try:
         existing_rules = session.execute(select(RuleDefinition)).scalars().all()
