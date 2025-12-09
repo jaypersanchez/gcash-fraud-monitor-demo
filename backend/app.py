@@ -988,7 +988,7 @@ def create_app():
             anchor_id = (rec.get("accountId") or rec.get("deviceId"))
             if not anchor_id:
                 return False
-            # Treat explicit Neo4j flag or local flag as flagged; ignore isFraud signal for S&D.
+            # Treat explicit Neo4j flag as flagged; ignore isFraud
             if rec.get("flagged") is True:
                 return True
             return is_locally_flagged(anchor_id, anchor_type)
