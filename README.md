@@ -38,6 +38,23 @@ Notes:
    - Audit trail shows chronological actions.
    - Graph View placeholder notes future Neo4j/Bloom integration.
 
+## Docker (backend, frontend, postgres; Neo4j remote)
+Requirements: Docker + docker-compose, and a reachable Neo4j instance (set env vars).
+
+1) Set env (either export or create a `.env` in repo root):
+   - `NEO4J_URI=neo4j+s://...`
+   - `NEO4J_USER=...`
+   - `NEO4J_PASSWORD=...`
+   - (optional) override `DATABASE_URL` if not using the bundled Postgres.
+2) Build + start:
+   - `docker compose up --build`
+3) Access:
+   - Frontend: http://localhost:8000
+   - Backend API: http://localhost:5005/api
+4) Data sources:
+   - Postgres container for alerts/cases/AFASA/notes/transaction logs.
+   - Remote Neo4j (required) for detections and graphs.
+
 ## Key API Endpoints
 - `GET /api/health`
 - `GET /api/rules`, `GET /api/rules/:id`
