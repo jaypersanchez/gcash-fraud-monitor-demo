@@ -1171,14 +1171,13 @@ def create_app():
         results = []
         cypher = """
         MATCH (n)
-        WHERE any(k IN keys(n) WHERE toString(n[k]) CONTAINS $q)
-           OR any(k IN keys(n) WHERE toLower(toString(n[k])) CONTAINS $qLower)
+        WHERE any(k IN keys(n) WHERE toLower(toString(n[k])) CONTAINS $qLower)
         WITH n, labels(n) AS lbls
         RETURN n, lbls
         LIMIT 15
         """
         with driver.session() as session:
-            records = session.run(cypher, q=q, qLower=q_lower)
+            records = session.run(cypher, qLower=q_lower)
             for rec in records:
                 node = rec["n"]
                 lbls = rec["lbls"]
