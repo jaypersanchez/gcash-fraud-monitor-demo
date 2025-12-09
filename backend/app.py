@@ -1179,7 +1179,13 @@ def create_app():
         results = []
         cypher = """
         MATCH (n)
-        WHERE any(k IN keys(n) WHERE toLower(toString(n[k])) CONTAINS $qLower)
+        WHERE (exists(n.accountId) AND toLower(n.accountId) CONTAINS $qLower)
+           OR (exists(n.deviceId) AND toLower(n.deviceId) CONTAINS $qLower)
+           OR (exists(n.customerName) AND toLower(n.customerName) CONTAINS $qLower)
+           OR (exists(n.name) AND toLower(n.name) CONTAINS $qLower)
+           OR (exists(n.email) AND toLower(n.email) CONTAINS $qLower)
+           OR (exists(n.phoneNumber) AND toLower(n.phoneNumber) CONTAINS $qLower)
+           OR (exists(n.ssn) AND toLower(n.ssn) CONTAINS $qLower)
         WITH n, labels(n) AS lbls
         RETURN n, lbls
         LIMIT 15
