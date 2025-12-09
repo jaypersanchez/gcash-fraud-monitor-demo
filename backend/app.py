@@ -1197,8 +1197,8 @@ def create_app():
                 lbls = rec["lbls"]
                 props = dict(node)
                 label = lbls[0] if lbls else "Node"
-                anchor = props.get("accountId") or props.get("deviceId") or props.get("id") or props.get("name")
-                display = props.get("customerName") or props.get("name") or props.get("email") or anchor
+                anchor = props.get("accountId") or props.get("deviceId") or props.get("id") or props.get("name") or props.get("ssn") or props.get("phoneNumber") or props.get("email")
+                display = props.get("customerName") or props.get("name") or props.get("email") or props.get("ssn") or props.get("phoneNumber") or anchor
                 results.append(
                     {
                         "label": label,

@@ -916,7 +916,15 @@ if (loadDeviceBtn) {
           return;
         }
         const first = matches[0];
-        const anchor = first.anchorId || (first.props && (first.props.accountId || first.props.deviceId));
+        const anchor =
+          first.anchorId ||
+          (first.props &&
+            (first.props.accountId ||
+              first.props.deviceId ||
+              first.props.ssn ||
+              first.props.phoneNumber ||
+              first.props.email ||
+              first.props.id));
         if (!anchor) {
           actionStatus.textContent = "Match found but missing anchor id.";
           return;
