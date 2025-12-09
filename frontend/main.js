@@ -153,6 +153,7 @@ async function fetchAlerts() {
       const anchorRule = first.ruleKey || rule;
       selectedAlert = first;
       selectedRuleKey = anchorRule;
+      updateFlagButtonsVisibility();
       if (anchorRule === "R2") {
         selectedDeviceId = first.deviceId;
         selectedAccountId = null;
