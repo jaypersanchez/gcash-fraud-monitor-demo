@@ -988,9 +988,7 @@ def create_app():
             anchor_id = (rec.get("accountId") or rec.get("deviceId"))
             if not anchor_id:
                 return False
-            # Treat explicit Neo4j flag or isFraud as flagged; also honor local flags
-            if str(rec.get("isFraud")).lower() == "true":
-                return True
+            # Treat explicit Neo4j flag as flagged; ignore isFraud
             if rec.get("flagged") is True:
                 return True
             return is_locally_flagged(anchor_id, anchor_type)
@@ -1017,7 +1015,6 @@ def create_app():
                     "severity": severity,
                     "rule": "R1 – High risk / flagged account",
                     "summary": summary,
-                    "flagged": rec.get("flagged") or False,
                     "status": "Open",
                     "created": datetime.utcnow().isoformat() + "Z",
                 }
@@ -1041,7 +1038,6 @@ def create_app():
                         "severity": severity,
                         "rule": "R2 – Shared risky device",
                         "summary": summary,
-                        "flagged": rec.get("flagged") or False,
                         "status": "Open",
                         "created": datetime.utcnow().isoformat() + "Z",
                     }
@@ -1065,7 +1061,6 @@ def create_app():
                         "severity": severity,
                         "rule": "R3 – Mule ring flow",
                         "summary": summary,
-                        "flagged": rec.get("flagged") or False,
                         "status": "Open",
                         "created": datetime.utcnow().isoformat() + "Z",
                     }
