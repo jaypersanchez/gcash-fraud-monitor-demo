@@ -64,7 +64,7 @@ def format_alert(a: dict) -> str:
         afasa = f"\n    AFASA: {suspicion or 'suspected'}, risk={risk if risk is not None else 'n/a'}"
     actions = ""
     if a.get("id"):
-        actions = f"\n    /afasa_dispute {a['id']}  | /afasa_hold <dispute_id> | /afasa_release <dispute_id> OK"
+        actions = f"\n    /afasa_dispute {a['id']}  | /afasa_hold [dispute_id] | /afasa_release [dispute_id] OK"
     return f"• [{sev}] {prefix}{rule}: {summary}\n    anchor: {anchor}{afasa}{actions}"
 
 
