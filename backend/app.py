@@ -576,9 +576,17 @@ def fetch_progressive_high_value_r10(tx, name: str, min_amount: float, min_hops:
 
 def create_app():
     load_dotenv()
-    app = Flask(__name__)
-    app.config.from_object(Config)
-    CORS(app)
+app = Flask(__name__)
+app.config.from_object(Config)
+CORS(app)
+
+@app.after_request
+def add_cors_headers(response):
+    # Ensure all endpoints (including new ones) emit permissive CORS for local demos.
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
 
     verify_database_connection()
 
