@@ -930,7 +930,14 @@ if (loadDeviceBtn) {
           return;
         }
         const label = (first.label || "").toUpperCase();
-        if (label.includes("DEVICE") || (first.props && first.props.deviceId)) {
+        const isIdentifier =
+          label.includes("DEVICE") ||
+          label.includes("EMAIL") ||
+          label.includes("PHONE") ||
+          label.includes("SSN") ||
+          label.includes("IDENTIFIER") ||
+          (first.props && (first.props.deviceId || first.props.email || first.props.phoneNumber || first.props.ssn));
+        if (isIdentifier) {
           selectedDeviceId = anchor;
           selectedAccountId = null;
           selectedRuleKey = "R2";
