@@ -30,6 +30,17 @@
             <div class="placeholder">
               In the full integration, this area will show a Neo4j graph (e.g., via Bloom).
             </div>
+            <div class="card" style="margin:8px 0; background:#f8fbff; border:1px solid #e1e9f5;">
+              <h4 style="margin: 0 0 6px 0; font-size:13px;">How to read this graph</h4>
+              <ul style="margin:0; padding-left:16px; color:#627089; font-size:12px;">
+                <li><strong style="color:#ff8c42;">Orange</strong>: subject account (alerted)</li>
+                <li><strong style="color:#0077f6;">Blue</strong>: other accounts connected to the subject</li>
+                <li><strong style="color:#01c2c5;">Teal</strong>: identifiers/devices linked to the subject (Email/Phone/SSN)</li>
+                <li><strong style="color:#ffd166;">Yellow</strong>: transactions connected to the subject</li>
+                <li>Edges: <em>HAS_IDENTIFIER</em>, <em>PERFORMS</em>, <em>TO</em></li>
+              </ul>
+              <p style="margin:8px 0 0 0; color:#0c1a36; font-size:12px;">Quickly spot mule patterns and shared devices without running Cypher manually.</p>
+            </div>
             <div class="grid-two">
               <button class="btn btn-secondary" id="neo-test">Test Neo4j Connectivity</button>
               <button class="btn btn-secondary" id="load-graph">Refresh Graph</button>
@@ -94,15 +105,6 @@
               <ul id="note-list" class="list" style="margin-top:8px;"></ul>
             </div>
             <div class="card" style="background:#f8fbff;border:1px solid #e1e9f5;">
-              <h4 style="margin: 0 0 8px 0">How to read this graph</h4>
-              <ul style="margin:0; padding-left:16px; color:#627089; font-size:13px;">
-                <li><strong style="color:#ff8c42;">Orange</strong>: subject account (alerted)</li>
-                <li><strong style="color:#0077f6;">Blue</strong>: other accounts connected to the subject</li>
-                <li><strong style="color:#01c2c5;">Teal</strong>: identifiers/devices linked to the subject (Email/Phone/SSN)</li>
-                <li><strong style="color:#ffd166;">Yellow</strong>: transactions connected to the subject</li>
-                <li>Edges: <em>HAS_IDENTIFIER</em> (account ↔ identifier), <em>PERFORMS</em> (account → transaction), <em>TO</em> (transaction → destination account)</li>
-              </ul>
-              <p style="margin:12px 0 0 0; color:#0c1a36; font-size:13px;">Pain point addressed: quickly spot mule patterns and shared devices without running Cypher manually—analysts get a visual of who the alerted account pays and which devices link them.</p>
               <div class="grid-two" style="gap:8px; margin-top:8px;">
                 <button class="btn btn-secondary" id="open-workspace">Open Neo4j Workspace</button>
                 <button class="btn btn-secondary" id="open-importer">Open Data Importer</button>
