@@ -1551,17 +1551,17 @@ def create_app():
     return app
 
 
-    def init_db():
+def init_db():
     Base.metadata.create_all(bind=engine)
     seed_data()
 
 
-    def verify_database_connection():
+def verify_database_connection():
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
 
 
-    def seed_data():
+def seed_data():
     session = get_session()
     try:
         existing_rules = session.execute(select(RuleDefinition)).scalars().all()
