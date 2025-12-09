@@ -1195,7 +1195,17 @@ def create_app():
             for rec in records:
                 node = rec["n"]
                 lbls = rec["lbls"]
-                props = dict(node)
+                raw_props = dict(node)
+                props = {}
+                for k, v in raw_props.items():
+                    try:
+                        jsonify(v)
+                        props[k] = v
+                    except Exception:
+                        if hasattr(v, "isoformat"):
+                            props[k] = v.isoformat()
+                        else:
+                            props[k] = str(v)
                 label = lbls[0] if lbls else "Node"
                 anchor = props.get("accountId") or props.get("deviceId") or props.get("id") or props.get("name") or props.get("ssn") or props.get("phoneNumber") or props.get("email")
                 display = props.get("customerName") or props.get("name") or props.get("email") or props.get("ssn") or props.get("phoneNumber") or anchor
