@@ -906,8 +906,8 @@ if (loadDeviceBtn) {
 }
 
 function updateFlagButtonsVisibility() {
-  const ruleLabel = selectedRuleKey || getRule();
-  const isSearchAndDestroy = ruleLabel === "ALL";
+  // Base flag state on dropdown rule, not clicked row, so S&D stays enabled after selection
+  const isSearchAndDestroy = getRule() === "ALL";
   const shouldEnableFlag = isSearchAndDestroy;
   const displayStyle = "inline-block";
   if (flagUnifiedBtn) {
