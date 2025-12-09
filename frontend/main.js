@@ -904,13 +904,6 @@ if (loadDeviceBtn) {
   });
 }
 
-if (afasaCreateBtn) afasaCreateBtn.addEventListener("click", createAfasaDispute);
-if (afasaHoldBtn) afasaHoldBtn.addEventListener("click", holdAfasaDispute);
-if (afasaReleaseBtn) afasaReleaseBtn.addEventListener("click", releaseAfasaDispute);
-
-updateSelectionInfo();
-fetchAlerts();
-
 function updateFlagButtonsVisibility() {
   const ruleLabel = selectedRuleKey || getRule();
   const isSearchAndDestroy = ruleLabel === "ALL";
@@ -922,3 +915,11 @@ function updateFlagButtonsVisibility() {
     afasaSection.style.display = isSearchAndDestroy ? "none" : "block";
   }
 }
+
+if (afasaCreateBtn) afasaCreateBtn.addEventListener("click", createAfasaDispute);
+if (afasaHoldBtn) afasaHoldBtn.addEventListener("click", holdAfasaDispute);
+if (afasaReleaseBtn) afasaReleaseBtn.addEventListener("click", releaseAfasaDispute);
+
+updateFlagButtonsVisibility();
+updateSelectionInfo();
+fetchAlerts();
