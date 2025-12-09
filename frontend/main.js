@@ -29,8 +29,7 @@ const temporalDurationInput = null;
 const temporalAmountInput = null;
 const temporalMinAmountInput = null;
 const selectionInfo = document.getElementById("selection-info");
-const flagAccountBtn = document.getElementById("flag-account");
-const flagDeviceBtn = document.getElementById("flag-device");
+const flagUnifiedBtn = document.getElementById("flag-unified");
 const loadDeviceBtn = document.getElementById("load-device");
 const deviceSearch = document.getElementById("device-search");
 const actionStatus = document.getElementById("action-status");
@@ -644,11 +643,8 @@ async function flagAnchor() {
   }
 }
 
-if (flagAccountBtn) {
-  flagAccountBtn.addEventListener("click", flagAnchor);
-}
-if (flagDeviceBtn) {
-  flagDeviceBtn.addEventListener("click", flagAnchor);
+if (flagUnifiedBtn) {
+  flagUnifiedBtn.addEventListener("click", flagAnchor);
 }
 
 if (addNoteBtn) {
@@ -919,6 +915,5 @@ function updateFlagButtonsVisibility() {
   const ruleLabel = selectedRuleKey || getRule();
   const isSearchAndDestroy = ruleLabel === "ALL";
   const displayStyle = isSearchAndDestroy ? "inline-block" : "none";
-  if (flagAccountBtn) flagAccountBtn.style.display = displayStyle;
-  if (flagDeviceBtn) flagDeviceBtn.style.display = displayStyle;
+  if (flagUnifiedBtn) flagUnifiedBtn.style.display = displayStyle;
 }
