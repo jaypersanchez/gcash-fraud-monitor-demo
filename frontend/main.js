@@ -908,8 +908,12 @@ if (loadDeviceBtn) {
 function updateFlagButtonsVisibility() {
   const ruleLabel = selectedRuleKey || getRule();
   const isSearchAndDestroy = ruleLabel === "ALL";
-  const displayStyle = isSearchAndDestroy ? "inline-block" : "none";
-  if (flagUnifiedBtn) flagUnifiedBtn.style.display = displayStyle;
+  const shouldEnableFlag = isSearchAndDestroy;
+  const displayStyle = "inline-block";
+  if (flagUnifiedBtn) {
+    flagUnifiedBtn.style.display = displayStyle;
+    flagUnifiedBtn.disabled = !shouldEnableFlag;
+  }
   // In Search & Destroy, hide AFASA actions to reduce confusion
   const afasaSection = document.getElementById("afasa-panel");
   if (afasaSection) {
