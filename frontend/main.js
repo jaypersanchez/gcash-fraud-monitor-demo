@@ -809,9 +809,19 @@ function updateAfasaInfo(dispute) {
 }
 
 async function createAfasaDispute() {
-  if (!selectedAlert || !selectedAlert.id) {
+  if (!selectedAlert) {
     afasaActionStatus.textContent = "Select an alert with an ID to create a dispute.";
     return;
+  }
+  // Only send a real alert_id when the alert is persisted in Postgres (e.g., FAF alerts).
+  // Neo4j R* detections use synthetic IDs like "R1-1", which would FK-fail in /afasa/disputes.
+  let alertIdToSend = null;
+  const numericAlertId = Number.isInteger(selectedAlert.id)
+    ? selectedAlert.id
+    : parseInt(String(selectedAlert.id || "").replace(/\D+/g, ""), 10);
+  const isDbBackedAlert = selectedAlert.ruleKey && !selectedAlert.ruleKey.startsWith("R");
+  if (isDbBackedAlert && Number.isFinite(numericAlertId)) {
+    alertIdToSend = numericAlertId;
   }
   afasaActionStatus.textContent = "Creating dispute...";
   try {
@@ -819,7 +829,7 @@ async function createAfasaDispute() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        alert_id: selectedAlert.id,
+        alert_id: alertIdToSend,
         tx_id: selectedAlert.original_tx_id || null,
         reason_category: "FMS_DETECTED",
         suspicion_type: selectedAlert.afasa_suspicion_type || "OTHER",

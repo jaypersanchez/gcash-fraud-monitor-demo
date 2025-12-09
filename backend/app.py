@@ -988,9 +988,8 @@ def create_app():
             anchor_id = (rec.get("accountId") or rec.get("deviceId"))
             if not anchor_id:
                 return False
-            # Treat Neo4j flagged or isFraud as flagged; also honor local flags
-            if str(rec.get("isFraud")).lower() == "true":
-                return True
+            # Treat explicit Neo4j flagged flag and local investigator flags as flagged.
+            # Do NOT auto-exclude isFraud so Search & Destroy still surfaces seeded demo cases.
             if rec.get("flagged") is True:
                 return True
             return is_locally_flagged(anchor_id, anchor_type)
@@ -1021,134 +1020,140 @@ def create_app():
                     "created": datetime.utcnow().isoformat() + "Z",
                 }
             )
-            # R2
-            for idx, rec in enumerate(r2, start=1):
-                risky = rec.get("riskyAccounts") or 0
-                total = rec.get("totalAccounts") or 0
-                severity = "High" if risky >= 3 else "Medium"
-                if exclude_flagged and is_flagged(rec, "DEVICE"):
-                    continue
-                summary = f"Identifier {rec.get('deviceId')} ({rec.get('deviceType')}) linked to {risky} risky / {total} total accounts"
-                alerts.append(
-                    {
-                        "ruleKey": "R2",
-                        "id": f"R2-{idx}",
-                        "deviceId": rec.get("deviceId"),
-                        "deviceType": rec.get("deviceType"),
-                        "riskyAccounts": risky,
-                        "totalAccounts": total,
-                        "severity": severity,
-                        "rule": "R2 – Shared risky device",
-                        "summary": summary,
-                        "status": "Open",
-                        "created": datetime.utcnow().isoformat() + "Z",
-                    }
-                )
-            # R3
-            for idx, rec in enumerate(r3, start=1):
-                if exclude_flagged and is_flagged(rec, "ACCOUNT"):
-                    continue
-                ring_size = rec.get("ringSize") or 0
-                risk = rec.get("riskScore") or 0
-                severity = "Critical" if ring_size >= 5 else "High"
-                summary = f"Account {rec.get('accountId')} in ring of size {ring_size} (risk={risk:.2f})"
-                alerts.append(
-                    {
-                        "ruleKey": "R3",
-                        "id": f"R3-{idx}",
-                        "accountId": rec.get("accountId"),
-                        "customerName": rec.get("customerName"),
-                        "riskScore": risk,
-                        "ringSize": ring_size,
-                        "severity": severity,
-                        "rule": "R3 – Mule ring flow",
-                        "summary": summary,
-                        "status": "Open",
-                        "created": datetime.utcnow().isoformat() + "Z",
-                    }
-                )
-            # R7
-            for idx, rec in enumerate(r7, start=1):
-                if exclude_flagged and is_flagged(rec, "ACCOUNT"):
-                    continue
-                risky = rec.get("riskySenders") or 0
-                tx_count = rec.get("txCount") or 0
-                risk = rec.get("riskScore") or 0
-                severity = "Critical" if risky >= 5 else "High"
-                summary = f"Hub {rec.get('accountId')} receives from {risky} risky senders ({tx_count} tx)"
-                alerts.append(
-                    {
-                        "ruleKey": "R7",
-                        "id": f"R7-{idx}",
-                        "accountId": rec.get("accountId"),
-                        "customerName": rec.get("customerName"),
-                        "riskScore": risk,
-                        "riskySenders": risky,
-                        "txCount": tx_count,
-                        "severity": severity,
-                        "rule": "R7 – Risky funnel to hub",
+
+        # R2
+        for idx, rec in enumerate(r2, start=1):
+            risky = rec.get("riskyAccounts") or 0
+            total = rec.get("totalAccounts") or 0
+            severity = "High" if risky >= 3 else "Medium"
+            if exclude_flagged and is_flagged(rec, "DEVICE"):
+                continue
+            summary = f"Identifier {rec.get('deviceId')} ({rec.get('deviceType')}) linked to {risky} risky / {total} total accounts"
+            alerts.append(
+                {
+                    "ruleKey": "R2",
+                    "id": f"R2-{idx}",
+                    "deviceId": rec.get("deviceId"),
+                    "deviceType": rec.get("deviceType"),
+                    "riskyAccounts": risky,
+                    "totalAccounts": total,
+                    "severity": severity,
+                    "rule": "R2 – Shared risky device",
                     "summary": summary,
                     "status": "Open",
                     "created": datetime.utcnow().isoformat() + "Z",
                 }
             )
-            # R8
-            for idx, rec in enumerate(r8, start=1):
-                severity = rec.get("severity") or "High"
-                summary = rec.get("summary") or "Progressive chain detected"
-                alerts.append(
-                    {
-                        "ruleKey": "R8",
-                        "id": f"R8-{idx}",
-                        "accountId": rec.get("accountId"),
-                        "customerName": rec.get("customerName"),
-                        "severity": severity,
-                        "rule": "R8 – Progressive time-window chain",
-                        "summary": summary,
-                        "pathLength": rec.get("pathLength"),
-                        "maxAmount": rec.get("maxAmount"),
-                        "status": "Open",
-                        "created": datetime.utcnow().isoformat() + "Z",
-                    }
-                )
-            # R9
-            for idx, rec in enumerate(r9, start=1):
-                severity = rec.get("severity") or "High"
-                summary = rec.get("summary") or "Cycle detected"
-                alerts.append(
-                    {
-                        "ruleKey": "R9",
-                        "id": f"R9-{idx}",
-                        "accountId": rec.get("accountId"),
-                        "customerName": rec.get("customerName"),
-                        "severity": severity,
-                        "rule": "R9 – High-value multi-hop cycle",
-                        "summary": summary,
-                        "pathLength": rec.get("pathLength"),
-                        "maxAmount": rec.get("maxAmount"),
-                        "status": "Open",
-                        "created": datetime.utcnow().isoformat() + "Z",
-                    }
-                )
-            # R10
-            for idx, rec in enumerate(r10, start=1):
-                severity = rec.get("severity") or "High"
-                summary = rec.get("summary") or "Progressive high-value chain"
-                alerts.append(
-                    {
-                        "ruleKey": "R10",
-                        "id": f"R10-{idx}",
-                        "accountId": rec.get("accountId"),
-                        "customerName": rec.get("customerName"),
-                        "severity": severity,
-                        "rule": "R10 – Time-ordered high-value chain",
-                        "summary": summary,
-                        "pathLength": rec.get("pathLength"),
-                        "maxAmount": rec.get("maxAmount"),
-                        "status": "Open",
-                        "created": datetime.utcnow().isoformat() + "Z",
-                    }
-                )
+
+        # R3
+        for idx, rec in enumerate(r3, start=1):
+            if exclude_flagged and is_flagged(rec, "ACCOUNT"):
+                continue
+            ring_size = rec.get("ringSize") or 0
+            risk = rec.get("riskScore") or 0
+            severity = "Critical" if ring_size >= 5 else "High"
+            summary = f"Account {rec.get('accountId')} in ring of size {ring_size} (risk={risk:.2f})"
+            alerts.append(
+                {
+                    "ruleKey": "R3",
+                    "id": f"R3-{idx}",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "riskScore": risk,
+                    "ringSize": ring_size,
+                    "severity": severity,
+                    "rule": "R3 – Mule ring flow",
+                    "summary": summary,
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+
+        # R7
+        for idx, rec in enumerate(r7, start=1):
+            if exclude_flagged and is_flagged(rec, "ACCOUNT"):
+                continue
+            risky = rec.get("riskySenders") or 0
+            tx_count = rec.get("txCount") or 0
+            risk = rec.get("riskScore") or 0
+            severity = "Critical" if risky >= 5 else "High"
+            summary = f"Hub {rec.get('accountId')} receives from {risky} risky senders ({tx_count} tx)"
+            alerts.append(
+                {
+                    "ruleKey": "R7",
+                    "id": f"R7-{idx}",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "riskScore": risk,
+                    "riskySenders": risky,
+                    "txCount": tx_count,
+                    "severity": severity,
+                    "rule": "R7 – Risky funnel to hub",
+                    "summary": summary,
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+
+        # R8
+        for idx, rec in enumerate(r8, start=1):
+            severity = rec.get("severity") or "High"
+            summary = rec.get("summary") or "Progressive chain detected"
+            alerts.append(
+                {
+                    "ruleKey": "R8",
+                    "id": f"R8-{idx}",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "severity": severity,
+                    "rule": "R8 – Progressive time-window chain",
+                    "summary": summary,
+                    "pathLength": rec.get("pathLength"),
+                    "maxAmount": rec.get("maxAmount"),
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+
+        # R9
+        for idx, rec in enumerate(r9, start=1):
+            severity = rec.get("severity") or "High"
+            summary = rec.get("summary") or "Cycle detected"
+            alerts.append(
+                {
+                    "ruleKey": "R9",
+                    "id": f"R9-{idx}",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "severity": severity,
+                    "rule": "R9 – High-value multi-hop cycle",
+                    "summary": summary,
+                    "pathLength": rec.get("pathLength"),
+                    "maxAmount": rec.get("maxAmount"),
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+
+        # R10
+        for idx, rec in enumerate(r10, start=1):
+            severity = rec.get("severity") or "High"
+            summary = rec.get("summary") or "Progressive high-value chain"
+            alerts.append(
+                {
+                    "ruleKey": "R10",
+                    "id": f"R10-{idx}",
+                    "accountId": rec.get("accountId"),
+                    "customerName": rec.get("customerName"),
+                    "severity": severity,
+                    "rule": "R10 – Time-ordered high-value chain",
+                    "summary": summary,
+                    "pathLength": rec.get("pathLength"),
+                    "maxAmount": rec.get("maxAmount"),
+                    "status": "Open",
+                    "created": datetime.utcnow().isoformat() + "Z",
+                }
+            )
         return jsonify(alerts)
 
     def run_ai_assessment(rule_key: str, anchor: str):
