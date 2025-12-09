@@ -902,16 +902,44 @@ async function releaseAfasaDispute() {
 
 if (loadDeviceBtn) {
   loadDeviceBtn.addEventListener("click", () => {
-    const devId = deviceSearch ? deviceSearch.value.trim() : "";
-    if (!devId) {
-      if (actionStatus) actionStatus.textContent = "Enter a device ID.";
+    const queryText = deviceSearch ? deviceSearch.value.trim() : "";
+    if (!queryText) {
+      if (actionStatus) actionStatus.textContent = "Enter a search value.";
       return;
     }
-    selectedDeviceId = devId;
-    selectedAccountId = null;
-    selectedRuleKey = "R2";
-    updateSelectionInfo();
-    loadGraphForSelected();
+    actionStatus.textContent = "Resolving...";
+    fetch(`${API_BASE}/neo4j/resolve?q=${encodeURIComponent(queryText)}`)
+      .then((res) => res.json())
+      .then((matches) => {
+        if (!matches || !matches.length) {
+          actionStatus.textContent = "No matching nodes found in Neo4j.";
+          return;
+        }
+        const first = matches[0];
+        const anchor = first.anchorId || (first.props && (first.props.accountId || first.props.deviceId));
+        if (!anchor) {
+          actionStatus.textContent = "Match found but missing anchor id.";
+          return;
+        }
+        const label = (first.label || "").toUpperCase();
+        if (label.includes("DEVICE") || (first.props && first.props.deviceId)) {
+          selectedDeviceId = anchor;
+          selectedAccountId = null;
+          selectedRuleKey = "R2";
+        } else {
+          selectedAccountId = anchor;
+          selectedDeviceId = null;
+          selectedRuleKey = "R1";
+        }
+        const note = matches.length > 1 ? `Resolved to ${anchor} (showing first of ${matches.length}).` : `Resolved to ${anchor}.`;
+        actionStatus.textContent = note;
+        updateSelectionInfo();
+        loadGraphForSelected();
+      })
+      .catch((err) => {
+        console.error(err);
+        actionStatus.textContent = "Resolve failed.";
+      });
   });
 }
 

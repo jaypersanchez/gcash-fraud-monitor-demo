@@ -1156,6 +1156,46 @@ def create_app():
             )
         return jsonify(alerts)
 
+    @app.route("/api/neo4j/resolve", methods=["GET"])
+    def neo4j_resolve_identifier():
+        """
+        Fuzzy resolve a free-text query to possible anchors (account/device/identifier).
+        Returns a list of matches so the UI can let the user pick.
+        """
+        if not driver:
+            return jsonify({"status": "error", "message": "Neo4j driver not configured"}), 500
+        q = (request.args.get("q") or "").strip()
+        if not q:
+            return jsonify([])
+        q_lower = q.lower()
+        results = []
+        cypher = """
+        MATCH (n)
+        WHERE any(k IN keys(n) WHERE toString(n[k]) CONTAINS $q)
+           OR any(k IN keys(n) WHERE toLower(toString(n[k])) CONTAINS $qLower)
+        WITH n, labels(n) AS lbls
+        RETURN n, lbls
+        LIMIT 15
+        """
+        with driver.session() as session:
+            records = session.run(cypher, q=q, qLower=q_lower)
+            for rec in records:
+                node = rec["n"]
+                lbls = rec["lbls"]
+                props = dict(node)
+                label = lbls[0] if lbls else "Node"
+                anchor = props.get("accountId") or props.get("deviceId") or props.get("id") or props.get("name")
+                display = props.get("customerName") or props.get("name") or props.get("email") or anchor
+                results.append(
+                    {
+                        "label": label,
+                        "anchorId": anchor,
+                        "display": display,
+                        "props": props,
+                    }
+                )
+        return jsonify(results)
+
     def run_ai_assessment(rule_key: str, anchor: str):
         graph = _graph_for_identifier(anchor) if rule_key == "R2" else _graph_for_account(anchor)
         png_path = _render_dot_png(graph["nodes"], graph["edges"])
