@@ -25,12 +25,14 @@ a {
   text-decoration: none;
 }
 
+/* Overall app shell */
 .app-shell {
   max-width: 2000px;
   margin: 0 auto;
   padding: 24px 32px;
 }
 
+/* Top header/nav */
 .nav {
   display: flex;
   align-items: center;
@@ -53,6 +55,7 @@ a {
   opacity: 0.9;
 }
 
+/* Generic card */
 .card {
   background: var(--card-bg);
   border-radius: 16px;
@@ -61,16 +64,26 @@ a {
   border: 1px solid var(--border);
 }
 
+/* Generic vertical stack */
 .stack {
   display: grid;
   gap: 16px;
 }
 
+/* === MAIN GRID LAYOUT === */
+/* 3 columns:
+ *  - Left: Alerts (fixed ~340px)
+ *  - Middle: Selection & Actions, top-right of the graph row
+ *  - Right: Case Workspace
+ * 2 rows:
+ *  - Row 1: alerts | selection | workspace
+ *  - Row 2: alerts | graph (spans middle+right)
+ */
 .main-grid {
   display: grid;
-  grid-template-columns: 360px 1fr 1fr;
-  grid-template-rows: auto minmax(480px, auto); /* top row = content, bottom row = graph */
-  gap: 20px;
+  grid-template-columns: 340px minmax(420px, 1fr) minmax(420px, 1fr);
+  grid-template-rows: auto minmax(540px, 1fr);
+  gap: 16px;
   margin-top: 24px;
   grid-template-areas:
     "alerts selection workspace"
@@ -78,7 +91,7 @@ a {
   align-items: start;
 }
 
-/* Panels mapped to grid areas */
+/* Map panels to grid areas */
 #alerts-panel {
   grid-area: alerts;
   display: grid;
@@ -103,26 +116,28 @@ a {
   gap: 16px;
 }
 
-/* Make the Selection card a bit narrower so it doesn't visually touch the Alerts column */
+/* Make selection card a bit narrower so it doesn't visually crowd Alerts */
 #selection-panel > .card {
-  max-width: 90%;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-/* Do the same for the graph controls + canvas so they don't look like they run under Alerts */
-#graph-panel > .card {
   max-width: 95%;
   margin-left: auto;
   margin-right: auto;
 }
 
-.scroll-panel {
-  max-height: 600px;
+/* Make graph controls + canvas slightly narrower in their cell */
+#graph-panel > .card {
+  max-width: 97%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Scrollable alerts list only (not the whole column) */
+#alerts-list-container {
+  max-height: 480px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
 
+/* Basic flex helper */
 .flex-between {
   display: flex;
   justify-content: space-between;
@@ -130,6 +145,7 @@ a {
   gap: 12px;
 }
 
+/* Badges for severity */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -160,6 +176,7 @@ a {
   color: #0b3b0b;
 }
 
+/* Status chip */
 .status-chip {
   background: #e8f0ff;
   color: #0f4ab8;
@@ -169,6 +186,7 @@ a {
   font-size: 12px;
 }
 
+/* Alerts table */
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -195,6 +213,7 @@ a {
   background: #eef3ff !important;
 }
 
+/* Buttons */
 .btn {
   border: none;
   background: var(--primary);
@@ -219,12 +238,14 @@ a {
   border: 1px solid var(--border);
 }
 
+/* 2-column mini grid (for graph buttons, etc.) */
 .grid-two {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
 }
 
+/* Lists */
 .list {
   list-style: none;
   padding: 0;
@@ -239,16 +260,19 @@ a {
   align-items: center;
 }
 
+/* Generic muted text */
 .muted {
   color: var(--muted);
 }
 
+/* Section titles */
 .section-title {
   margin: 0 0 8px 0;
   font-size: 16px;
   font-weight: 700;
 }
 
+/* Placeholder blocks */
 .placeholder {
   border: 1px dashed var(--border);
   padding: 16px;
@@ -258,6 +282,7 @@ a {
   color: var(--muted);
 }
 
+/* Tabs inside Case Workspace */
 .tabs {
   display: flex;
   gap: 8px;
@@ -290,6 +315,7 @@ a {
   display: block;
 }
 
+/* Responsive: stack on mobile */
 @media (max-width: 768px) {
   .app-shell {
     padding: 16px;
@@ -319,7 +345,8 @@ a {
   }
 }
 
-/* Let grid define heights; only give gentle minimums where needed */
+/* === Panel min-heights so everything feels anchored === */
+
 #alerts-panel {
   align-self: stretch;
 }
@@ -332,29 +359,25 @@ a {
   min-height: 220px;
 }
 
-#graph-panel {
-  min-height: auto;
-}
+/* === Graph legend (the “How to read this graph” card) === */
 
 #graph-legend {
   margin-top: 16px;
 }
 
-#graph-container {
-  width: 100%;
-  height: 520px;
-}
-
-#alerts-list-container {
-  max-height: 480px;
-  overflow-y: auto;
-}
-
+/* === GRAPH CANVAS FIX === */
+/* Card that contains the Cytoscape canvas */
 .graph-card {
-  overflow: hidden;
+  padding: 0;                 /* let Cytoscape use the full area */
   background: #f8fbff;
   border: 1px dashed #e1e9f5;
-  min-height: 480px;
-  height: auto;
+  height: 560px;              /* FIXED HEIGHT so the canvas is always visible */
   position: relative;
+  overflow: hidden;
+}
+
+/* Actual Cytoscape container – fills the card */
+#graph-container {
+  width: 100%;
+  height: 100%;
 }
