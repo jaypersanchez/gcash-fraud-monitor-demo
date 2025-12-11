@@ -26,9 +26,9 @@ a {
 }
 
 .app-shell {
-  max-width: 1200px;
+  max-width: 2000px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 24px 32px;
 }
 
 .nav {
@@ -64,6 +64,49 @@ a {
 .stack {
   display: grid;
   gap: 16px;
+}
+
+.main-grid {
+  display: grid;
+  grid-template-columns: 360px 1fr 1fr;
+  grid-template-rows: auto minmax(480px, auto); /* top row = content, bottom row = graph */
+  gap: 20px;
+  margin-top: 24px;
+  grid-template-areas:
+    "alerts selection workspace"
+    "alerts graph     graph";
+  align-items: start;
+}
+
+/* Panels mapped to grid areas */
+#alerts-panel {
+  grid-area: alerts;
+  display: grid;
+  gap: 16px;
+}
+
+#selection-panel {
+  grid-area: selection;
+  display: grid;
+  gap: 16px;
+}
+
+#case-workspace {
+  grid-area: workspace;
+  display: grid;
+  gap: 16px;
+}
+
+#graph-panel {
+  grid-area: graph;
+  display: grid;
+  gap: 16px;
+}
+
+.scroll-panel {
+  max-height: 600px;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .flex-between {
@@ -201,6 +244,38 @@ a {
   color: var(--muted);
 }
 
+.tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.tab {
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  border-radius: 999px 999px 0 0;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.tab.active {
+  background: #f0f6ff;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.tab-content {
+  display: none;
+  margin-top: 8px;
+}
+
+.tab-content.active {
+  display: block;
+}
+
 @media (max-width: 768px) {
   .app-shell {
     padding: 16px;
@@ -211,4 +286,61 @@ a {
     align-items: flex-start;
     gap: 8px;
   }
+
+  .main-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    grid-template-areas:
+      "alerts"
+      "selection"
+      "workspace"
+      "graph";
+  }
+
+  #alerts-panel,
+  #selection-panel,
+  #case-workspace,
+  #graph-panel {
+    min-height: auto;
+  }
+}
+
+/* Let grid define heights; only give gentle minimums where needed */
+#alerts-panel {
+  align-self: stretch;
+}
+
+#case-workspace {
+  min-height: 260px;
+}
+
+#selection-panel {
+  min-height: 220px;
+}
+
+#graph-panel {
+  min-height: auto;
+}
+
+#graph-legend {
+  margin-top: 16px;
+}
+
+#graph-container {
+  width: 100%;
+  height: 520px;
+}
+
+#alerts-list-container {
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.graph-card {
+  overflow: hidden;
+  background: #f8fbff;
+  border: 1px dashed #e1e9f5;
+  min-height: 480px;
+  height: auto;
+  position: relative;
 }
