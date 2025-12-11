@@ -1,0 +1,35 @@
+@startuml
+title Search & Destroy to AFASA Action Flow
+
+skinparam linetype ortho
+skinparam roundcorner 8
+hide stereotype
+
+start
+:Analyst opens Search & Destroy;
+:Enter free text (name/email/SSN/device/account);
+:Backend resolve → /api/neo4j/resolve (identifier graph fallback);
+if (Match found?) then (yes)
+  :Display suspects list with risk markers and S&D flag option;
+  :Select a suspect (account/identifier/device);
+  :Open subject context panel (summary, links, R hits if any);
+  if (Take action?) then (yes)
+    :Choose "Flag subject";
+    :Backend records InvestigatorAction FLAG + rule_key (R1–R10) if applicable;
+    :If AFASA scenario? choose suspicion type;
+    :Create/update Alert (is_afasa=true, suspicion_type, score);
+    :Create/update Case bound to alert (network summary, linked accounts/devices);
+    :Display AFASA actions;
+    if (AFASA action selected?) then (yes)
+      :Pick action (Hold/Release/Restitute/Dispute Create/Verification Event/Mule Flag);
+      :Case + AFASA service logs transition and notes;
+      :Broadcast notifications (Telegram agent poll, UI refresh);
+    endif
+    :Subject card updates flagged state + case context;
+  endif
+else (no)
+  :Show no-match + tips to refine query;
+endif
+stop
+
+@enduml

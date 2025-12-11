@@ -1,0 +1,120 @@
+@startuml
+title Fraud Recon (Postgres) - ERD
+
+hide methods
+hide stereotypes
+skinparam linetype ortho
+skinparam roundcorner 8
+skinparam class {
+  BackgroundColor White
+  BorderColor Black
+}
+
+entity "accounts" as accounts {
+  * id : integer <<PK>>
+  --
+  account_number : varchar(50) <<UQ>>
+  customer_name : varchar(255)
+  risk_score : float
+  created_at : timestamptz
+}
+
+entity "rule_definitions" as rule_definitions {
+  * id : integer <<PK>>
+  --
+  name : varchar(255) <<UQ>>
+  description : text
+  cypher_query : text
+  severity : enum(rule_severity)
+  enabled : boolean
+  created_at : timestamptz
+}
+
+entity "alerts" as alerts {
+  * id : integer <<PK>>
+  --
+  rule_id : integer <<FK>>
+  subject_account_id : integer <<FK>>
+  severity : enum(alert_severity)
+  status : enum(alert_status)
+  summary : text
+  details : jsonb
+  is_afasa : boolean
+  afasa_suspicion_type : enum(afasa_alert_suspicion)
+  afasa_risk_score : integer
+  created_at : timestamptz
+  updated_at : timestamptz
+}
+
+entity "cases" as cases {
+  * id : integer <<PK>>
+  --
+  alert_id : integer <<FK, UQ>>
+  subject_account_id : integer <<FK>>
+  status : enum(case_status)
+  network_summary : text
+  linked_accounts : jsonb
+  linked_devices : jsonb
+  created_at : timestamptz
+  updated_at : timestamptz
+}
+
+entity "case_actions" as case_actions {
+  * id : integer <<PK>>
+  --
+  case_id : integer <<FK>>
+  action : enum(case_action)
+  performed_by : varchar(255)
+  notes : text
+  created_at : timestamptz
+}
+
+entity "investigator_actions" as investigator_actions {
+  * id : integer <<PK>>
+  --
+  anchor_id : varchar(255)
+  anchor_type : enum(anchor_type)
+  action : varchar(50)
+  status : varchar(50)
+  note : text
+  rule_key : varchar(10)
+  created_at : timestamptz
+}
+
+entity "devices" as devices {
+  * id : integer <<PK>>
+  --
+  device_id : varchar(100) <<UQ>>
+  device_type : varchar(100)
+  created_at : timestamptz
+}
+
+entity "transaction_logs" as transaction_logs {
+  * id : integer <<PK>>
+  --
+  tx_reference : varchar(100) <<UQ>>
+  sender_account_id : varchar(255)
+  receiver_account_id : varchar(255)
+  amount : numeric(18,2)
+  currency : varchar(10)
+  tx_datetime : timestamptz
+  ofi : varchar(255)
+  rfi : varchar(255)
+  channel : varchar(50)
+  auth_method : varchar(50)
+  device_fingerprint : varchar(255)
+  device_details : text
+  ip_address : varchar(100)
+  browser_user_agent : text
+  non_financial_action : varchar(100)
+  network_reference : varchar(255)
+  created_at : timestamptz
+}
+
+alerts::rule_id }o--|| rule_definitions::id
+alerts::subject_account_id }o--|| accounts::id
+cases::alert_id ||--|| alerts::id
+cases::subject_account_id }o--|| accounts::id
+case_actions::case_id }o--|| cases::id
+
+@enduml

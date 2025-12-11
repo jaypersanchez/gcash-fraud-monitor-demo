@@ -1,0 +1,51 @@
+@startuml
+title Fraud Recon – Sales / Marketing Use Cases
+
+left to right direction
+
+actor "Compliance Officer" as CO
+actor "Fintech / Wallet" as FW
+actor "Bank" as BANK
+actor "Fraud Ops Lead" as FOL
+actor "Sales / AE" as SAE
+
+rectangle "Fraud Recon Platform" {
+  usecase "Regulatory Logging\n(BSP 1213 / 1214 / 1215)" as UC_Reg
+  usecase "Telegram Push Alerts" as UC_TG
+  usecase "Alert Triage\n(R1–R10 rules)" as UC_Alerts
+  usecase "Case Management\n(actions, notes, timeline)" as UC_Case
+  usecase "Search & Destroy\n(free-text suspect search)" as UC_SnD
+  usecase "Graph Investigation\n(Neo4j visual)" as UC_Graph
+  usecase "AFASA Dispute Lifecycle\n(create / hold / release / restitute)" as UC_AFASA
+}
+
+' --- Compliance Officer interactions ---
+CO --> UC_Reg
+CO --> UC_Case
+CO --> UC_AFASA
+
+' --- Fintech / Wallet interactions ---
+FW --> UC_Alerts
+FW --> UC_TG
+
+' --- Bank interactions ---
+BANK --> UC_Alerts
+BANK --> UC_Case
+BANK --> UC_SnD
+BANK --> UC_Graph
+BANK --> UC_AFASA
+
+' --- Fraud Ops Lead interactions ---
+FOL --> UC_Alerts
+FOL --> UC_TG
+FOL --> UC_Case
+FOL --> UC_SnD
+FOL --> UC_Graph
+FOL --> UC_AFASA
+
+' --- Sales / AE interactions (demo / pitch flows) ---
+SAE --> UC_Alerts
+SAE --> UC_SnD
+SAE --> UC_Graph
+
+@enduml
