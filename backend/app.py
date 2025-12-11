@@ -77,6 +77,7 @@ def _graph_for_account(account_id: str):
     WHERE (a:Account AND a.account_number = $accountId)
        OR (a:Mule AND a.id = $accountId)
        OR (a:Client AND a.id = $accountId)
+       OR (a:Merchant AND a.id = $accountId)
     OPTIONAL MATCH (a)-[:HAS_EMAIL|HAS_PHONE|HAS_SSN]->(id)<-[:HAS_EMAIL|HAS_PHONE|HAS_SSN]-(peer)
     OPTIONAL MATCH (a)-[:PERFORMED]->(txOut:Transaction)-[:TO]->(dst)
     OPTIONAL MATCH (src)-[:PERFORMED]->(txIn:Transaction)-[:TO]->(a)

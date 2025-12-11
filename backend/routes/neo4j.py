@@ -71,9 +71,10 @@ def neo4j_flag_account(account_id: str):
     # Best-effort: try to set a flag property in Neo4j, but ignore failures
     cypher = """
     MATCH (a)
-    WHERE (a:Account AND a.account_number = $accountId)
+    WHERE (a:Account AND (a.account_number = $accountId OR a.accountId = $accountId))
        OR (a:Mule AND a.id = $accountId)
        OR (a:Client AND a.id = $accountId)
+       OR (a:Merchant AND a.id = $accountId)
     SET a.flagged = true, a.flagged_at = datetime()
     RETURN coalesce(a.account_number, a.id) AS accountId
     """
@@ -154,7 +155,7 @@ def neo4j_graph_account(account_id: str):
                 nodes[key] = node
 
             a = record["a"]
-            anchor_id = a.get("account_number") or a.get("id")
+            anchor_id = a.get("account_number") or a.get("accountId") or a.get("id")
             anchor_label = a.get("customer_name") or a.get("name") or anchor_id
             anchor_labels = record.get("a_labels") or []
             flagged_anchor = _is_flagged(a, anchor_labels)

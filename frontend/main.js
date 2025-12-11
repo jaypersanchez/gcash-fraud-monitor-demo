@@ -320,6 +320,16 @@ async function loadGraphForSelected() {
       endpoint = "/neo4j/graph/device/";
       res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
       data = await res.json();
+    } else if (!res.ok && selectedAnchorType === "ACCOUNT") {
+      // If account lookup fails, try identifier graph in case anchor is an identifier
+      endpoint = "/neo4j/graph/identifier/";
+      res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
+      data = await res.json();
+      if (!res.ok) {
+        endpoint = "/neo4j/graph/device/";
+        res = await fetch(`${API_BASE}${endpoint}${encodeURIComponent(anchor)}`);
+        data = await res.json();
+      }
     }
     if (!res.ok) {
       neoStatus.textContent = data.message || "Graph load failed.";
@@ -490,8 +500,7 @@ function renderGraph(nodes, edges) {
 
   cy.on("tap", "node", (evt) => {
     const node = evt.target.data();
-    // Only drill into 13+ digit account-like IDs; skip banks/merchants/etc.
-    const looksLikeAccount = node.type === "Account" && /^[0-9]{13,}$/.test(node.id);
+    const looksLikeAccount = node.type === "Account" && /^[A-Za-z0-9_-]+$/.test(node.id);
     const looksLikeDevice = node.type === "Device";
     selectedAnchorType = looksLikeDevice ? "DEVICE" : "ACCOUNT";
     focusNode(evt.target);
