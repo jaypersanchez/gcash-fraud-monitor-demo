@@ -103,6 +103,20 @@ a {
   gap: 16px;
 }
 
+/* Make the Selection card a bit narrower so it doesn't visually touch the Alerts column */
+#selection-panel > .card {
+  max-width: 90%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Do the same for the graph controls + canvas so they don't look like they run under Alerts */
+#graph-panel > .card {
+  max-width: 95%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .scroll-panel {
   max-height: 600px;
   overflow-y: auto;
