@@ -25,12 +25,14 @@ a {
   text-decoration: none;
 }
 
+/* Overall app shell */
 .app-shell {
-  max-width: 1200px;
+  max-width: 1800px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 24px 32px;
 }
 
+/* Top header/nav */
 .nav {
   display: flex;
   align-items: center;
@@ -53,6 +55,7 @@ a {
   opacity: 0.9;
 }
 
+/* Generic card */
 .card {
   background: var(--card-bg);
   border-radius: 16px;
@@ -61,11 +64,96 @@ a {
   border: 1px solid var(--border);
 }
 
+/* Generic vertical stack */
 .stack {
   display: grid;
   gap: 16px;
 }
 
+/* ==========================
+   Main tri-column layout
+   ========================== */
+
+.main-grid {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: 360px minmax(460px, 1fr) minmax(460px, 1fr);
+  grid-template-rows: auto minmax(480px, auto);
+  grid-template-areas:
+    "alerts selection case"
+    "alerts graph     graph";
+  column-gap: 24px;
+  row-gap: 24px;
+  align-items: flex-start;
+}
+
+/* Left column (Alerts) spans both rows */
+#alerts-panel {
+  grid-area: alerts;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Make the alerts list scrollable but NOT infinite-height */
+#alerts-table-section {
+  flex: 1;
+  min-height: 0;             /* important so flexbox respects max-height */
+  max-height: calc(100vh - 320px);
+  overflow-y: auto;
+}
+
+/* Top-right row: Selection & Actions (middle), Case Workspace (right) */
+#selection-panel {
+  grid-area: selection;
+  min-height: 220px;
+}
+
+#case-workspace {
+  grid-area: case;
+  min-height: 260px;
+}
+
+/* Bottom row: graph canvas, spanning middle + right columns */
+#graph-panel {
+  grid-area: graph;
+  padding: 16px 20px 20px;
+}
+
+/* Ensure cards never overflow their grid cell horizontally */
+#alerts-panel > .card,
+#selection-panel > .card,
+#case-workspace > .card,
+#graph-panel {
+  width: 100%;
+  max-width: 100%;
+}
+
+#alerts-panel table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+#alerts-panel td,
+#alerts-panel th {
+  word-wrap: break-word;
+  white-space: normal;
+}
+
+#alerts-panel .summary-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Scrollable alerts list only (not the whole column) */
+#alerts-list-container {
+  max-height: 480px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* Basic flex helper */
 .flex-between {
   display: flex;
   justify-content: space-between;
@@ -73,6 +161,7 @@ a {
   gap: 12px;
 }
 
+/* Badges for severity */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -103,6 +192,7 @@ a {
   color: #0b3b0b;
 }
 
+/* Status chip */
 .status-chip {
   background: #e8f0ff;
   color: #0f4ab8;
@@ -112,6 +202,7 @@ a {
   font-size: 12px;
 }
 
+/* Alerts table */
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -138,6 +229,7 @@ a {
   background: #eef3ff !important;
 }
 
+/* Buttons */
 .btn {
   border: none;
   background: var(--primary);
@@ -162,12 +254,14 @@ a {
   border: 1px solid var(--border);
 }
 
+/* 2-column mini grid (for graph buttons, etc.) */
 .grid-two {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
 }
 
+/* Lists */
 .list {
   list-style: none;
   padding: 0;
@@ -182,16 +276,19 @@ a {
   align-items: center;
 }
 
+/* Generic muted text */
 .muted {
   color: var(--muted);
 }
 
+/* Section titles */
 .section-title {
   margin: 0 0 8px 0;
   font-size: 16px;
   font-weight: 700;
 }
 
+/* Placeholder blocks */
 .placeholder {
   border: 1px dashed var(--border);
   padding: 16px;
@@ -201,6 +298,40 @@ a {
   color: var(--muted);
 }
 
+/* Tabs inside Case Workspace */
+.tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.tab {
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  border-radius: 999px 999px 0 0;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.tab.active {
+  background: #f0f6ff;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.tab-content {
+  display: none;
+  margin-top: 8px;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+/* Responsive: stack on mobile */
 @media (max-width: 768px) {
   .app-shell {
     padding: 16px;
@@ -211,4 +342,67 @@ a {
     align-items: flex-start;
     gap: 8px;
   }
+
+  .main-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    grid-template-areas:
+      "alerts"
+      "selection"
+      "workspace"
+      "graph";
+  }
+
+  #alerts-panel,
+  #selection-panel,
+  #case-workspace,
+  #graph-panel {
+    min-height: auto;
+  }
+}
+
+/* === Panel min-heights so everything feels anchored === */
+
+#alerts-panel {
+  align-self: stretch;
+}
+
+#case-workspace {
+  min-height: 260px;
+}
+
+#selection-panel {
+  min-height: 220px;
+}
+
+/* === Graph legend (the “How to read this graph” card) === */
+
+#graph-legend {
+  margin-top: 16px;
+}
+
+/* ==========================
+   Graph container sizing
+   ========================== */
+
+#graph-panel .card {
+  /* "Test Neo4j Connectivity / Refresh Graph" card */
+  margin-bottom: 16px;
+}
+
+/* Card that hosts the Cytoscape graph */
+.graph-card {
+  padding: 0;                      /* let Cytoscape use the full area */
+  background: #f8fbff;
+  border: 1px dashed #e1e9f5;
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  min-height: 520px;               /* ensure visible height */
+}
+
+/* Actual Cytoscape container – fills the card */
+#graph-container {
+  width: 100%;
+  height: 100%;
 }
