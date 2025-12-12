@@ -222,8 +222,7 @@ function renderAlerts(alerts) {
         ? `<span class="status-chip" style="background:#ffe9d6;color:#a65b00;">AFASA ${alert.afasa_suspicion_type || ""} (${alert.afasa_risk_score || "n/a"})</span>`
         : "";
     row.innerHTML = `
-      <td><span class="badge ${severityClass(alert.severity)}">${alert.severity}</span></td>
-      <td class="muted">#${alert.id}</td>
+      <td><span class="badge ${severityClass(alert.severity)}">${alert.severity}</span> <span class="muted">#${alert.id}</span></td>
       <td class="summary-cell">
         <div>${displaySummary}</div>
         <div>${afasaBadge}</div>
