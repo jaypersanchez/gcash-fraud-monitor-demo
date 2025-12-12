@@ -129,6 +129,23 @@ a {
   max-width: 100%;
 }
 
+#alerts-panel table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+#alerts-panel td,
+#alerts-panel th {
+  word-wrap: break-word;
+  white-space: normal;
+}
+
+#alerts-panel .summary-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 /* Scrollable alerts list only (not the whole column) */
 #alerts-list-container {
   max-height: 480px;

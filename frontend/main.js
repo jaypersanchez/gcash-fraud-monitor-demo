@@ -46,12 +46,15 @@ const caseActionStatus = document.getElementById("case-action-status");
 const caseBlockBtn = document.getElementById("case-block");
 const caseSafeBtn = document.getElementById("case-safe");
 const caseEscalateBtn = document.getElementById("case-escalate");
+const caseHeaderSubtitle = document.getElementById("case-header-subtitle");
+const caseMeta = document.getElementById("case-meta");
 const afasaStatus = document.getElementById("afasa-status");
 const afasaDetails = document.getElementById("afasa-details");
 const afasaCreateBtn = document.getElementById("afasa-create");
 const afasaHoldBtn = document.getElementById("afasa-hold");
 const afasaReleaseBtn = document.getElementById("afasa-release");
 const afasaActionStatus = document.getElementById("afasa-action-status");
+const networkSummary = document.getElementById("network-summary");
 
 let alertsCache = [];
 let selectedAccountId = null;
@@ -77,6 +80,24 @@ const severityClass = (severity) => {
   };
   return map[severity] || "badge-low";
 };
+
+function updateCaseHeaderFromAlert(alert) {
+  if (!caseHeaderSubtitle || !caseMeta) return;
+  if (!alert) {
+    caseHeaderSubtitle.textContent = "Select an alert to view details.";
+    caseMeta.textContent = "";
+    return;
+  }
+  const ruleKey = alert.ruleKey || alert.rule || getRule();
+  caseHeaderSubtitle.textContent = `Alert ${alert.id} · Rule ${ruleKey}`;
+  const created =
+    alert.createdAt || alert.created
+      ? new Date(alert.createdAt || alert.created).toLocaleString()
+      : "";
+  caseMeta.textContent = `Severity: ${alert.severity || "-"} · Status: ${alert.status || "-"}${
+    created ? ` · Created: ${created}` : ""
+  }`;
+}
 
 function getRule() {
   return (ruleSelect && ruleSelect.value) || "R1";
@@ -152,6 +173,7 @@ async function fetchAlerts() {
       const first = data[0];
       const anchorRule = first.ruleKey || rule;
       selectedAlert = first;
+      updateCaseHeaderFromAlert(first);
       selectedRuleKey = anchorRule;
       updateFlagButtonsVisibility();
       if (anchorRule === "R2") {
@@ -168,6 +190,7 @@ async function fetchAlerts() {
       loadGraphForSelected();
     } else if (neoStatus) {
       neoStatus.textContent = "No alerts to load graph.";
+      updateCaseHeaderFromAlert(null);
     }
   } catch (err) {
     console.error("Failed to fetch alerts", err);
@@ -202,7 +225,10 @@ function renderAlerts(alerts) {
       <td><span class="badge ${severityClass(alert.severity)}">${alert.severity}</span></td>
       <td class="muted">#${alert.id}</td>
       <td>${alert.rule || "Account Risk"}</td>
-      <td>${displaySummary} ${afasaBadge}</td>
+      <td class="summary-cell">
+        <div>${displaySummary}</div>
+        <div>${afasaBadge}</div>
+      </td>
       <td><span class="status-chip">${alert.status}</span></td>
       <td class="muted">${alert.created ? new Date(alert.created).toLocaleString() : ""}</td>
     `;
@@ -226,6 +252,7 @@ function renderAlerts(alerts) {
       }
       selectedRuleKey = rowRule;
       selectedAlert = alert;
+      updateCaseHeaderFromAlert(alert);
       Array.from(alertsBody.children).forEach((tr) => tr.classList.remove("selected-row"));
       row.classList.add("selected-row");
       updateSelectionInfo();
@@ -719,7 +746,9 @@ function renderContext() {
   const anchor = ruleLabel === "R2" ? (selectedDeviceId || a.deviceId) : (selectedAccountId || a.accountId);
   if (!anchor) {
     contextInfo.textContent = "No context available.";
+    if (networkSummary) networkSummary.textContent = "";
     renderNotes(null);
+    updateCaseHeaderFromAlert(null);
     return;
   }
   let lines = [];
@@ -745,6 +774,9 @@ function renderContext() {
     lines.push(`Risk: ${a.riskScore ?? "-"}`);
   }
   contextInfo.textContent = lines.join(" | ");
+  if (networkSummary) {
+    networkSummary.textContent = lines.join(" | ");
+  }
 
   const key = `${ruleLabel}:${anchor}`;
   renderNotes(key);
@@ -805,6 +837,19 @@ async function handleCaseAction(action) {
 if (caseBlockBtn) caseBlockBtn.addEventListener("click", () => handleCaseAction("BLOCK"));
 if (caseSafeBtn) caseSafeBtn.addEventListener("click", () => handleCaseAction("SAFE"));
 if (caseEscalateBtn) caseEscalateBtn.addEventListener("click", () => handleCaseAction("ESCALATE"));
+
+const tabs = document.querySelectorAll(".tab");
+const tabContents = document.querySelectorAll(".tab-content");
+tabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    const targetId = `tab-${tab.dataset.tab}`;
+    tabs.forEach((t) => t.classList.remove("active"));
+    tabContents.forEach((c) => c.classList.remove("active"));
+    tab.classList.add("active");
+    const target = document.getElementById(targetId);
+    if (target) target.classList.add("active");
+  });
+});
 
 function updateAfasaInfo(dispute) {
   if (!afasaStatus || !afasaDetails) return;
