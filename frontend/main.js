@@ -224,13 +224,10 @@ function renderAlerts(alerts) {
     row.innerHTML = `
       <td><span class="badge ${severityClass(alert.severity)}">${alert.severity}</span></td>
       <td class="muted">#${alert.id}</td>
-      <td>${alert.rule || "Account Risk"}</td>
       <td class="summary-cell">
         <div>${displaySummary}</div>
         <div>${afasaBadge}</div>
       </td>
-      <td><span class="status-chip">${alert.status}</span></td>
-      <td class="muted">${alert.created ? new Date(alert.created).toLocaleString() : ""}</td>
     `;
     row.addEventListener("click", () => {
       const rowRule = alert.ruleKey || getRule();
