@@ -1,0 +1,161 @@
+@startuml
+skinparam linetype ortho
+hide circle
+left to right direction
+
+' Entities with key attributes (simplified)
+entity "public.accounts" as accounts {
+  *id : uuid
+  tenant_id : uuid
+  role : text
+  first_name : text
+  middle_name : text
+  last_name : text
+  external_id : text
+  username : text
+  email : text
+  mobile_number : text
+  mobile_number_country_code : text
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.account_attributes" as account_attributes {
+  *id : uuid
+  *account_id : uuid
+  *name : text
+  value : text
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.account_addresses" as account_addresses {
+  *account_id : uuid
+  *address_id : uuid
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.addresses" as addresses {
+  *id : uuid
+  -- other fields not expanded
+}
+
+entity "public.address_fields" as address_fields {
+  *id : uuid
+  address_id : uuid
+  name : text
+  value : text
+}
+
+entity "public.external_accounts" as external_accounts {
+  *id : uuid
+  provider_id : text
+  account_id : uuid
+  external_account_reference : text
+  details : jsonb
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.external_account_attributes" as external_account_attributes {
+  *id : uuid
+  external_account_id : uuid
+  name : text
+  value : text
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.external_account_providers" as external_account_providers {
+  *value : text
+}
+
+entity "public.external_account_states" as external_account_states {
+  *id : uuid
+  external_account_id : uuid
+  name : text
+  value : text
+  details : jsonb
+  is_active : bool
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.devices" as devices {
+  *id : uuid
+  account_id : uuid
+  label : text
+  type : text
+  external_reference : text
+  detail : jsonb
+  is_active : bool
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.compliance_requests" as compliance_requests {
+  *id : uuid
+  provider_id : text
+  account_id : uuid
+  external_request_reference : text
+  details : jsonb
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.compliance_request_providers" as compliance_request_providers {
+  *value : text
+}
+
+entity "public.compliance_request_attributes" as compliance_request_attributes {
+  *id : uuid
+  compliance_request_id : uuid
+  name : text
+  value : text
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.compliance_request_states" as compliance_request_states {
+  *id : uuid
+  compliance_request_id : uuid
+  name : text
+  value : text
+  details : jsonb
+  is_active : bool
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.tenants" as tenants {
+  *id : uuid
+}
+
+' Relationships
+accounts ||--o{ account_attributes : account_id
+accounts ||--o{ account_addresses : account_id
+addresses ||--o{ account_addresses : address_id
+addresses ||--o{ address_fields : address_id
+accounts ||--o{ external_accounts : account_id
+external_account_providers ||--o{ external_accounts : provider_id
+external_accounts ||--o{ external_account_attributes : external_account_id
+external_accounts ||--o{ external_account_states : external_account_id
+accounts ||--o{ devices : account_id
+accounts ||--o{ compliance_requests : account_id
+compliance_request_providers ||--o{ compliance_requests : provider_id
+compliance_requests ||--o{ compliance_request_attributes : compliance_request_id
+compliance_requests ||--o{ compliance_request_states : compliance_request_id
+tenants ||--o{ accounts : tenant_id
+
+@enduml

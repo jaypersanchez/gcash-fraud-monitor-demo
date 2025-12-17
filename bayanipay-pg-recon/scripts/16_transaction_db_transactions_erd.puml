@@ -1,0 +1,102 @@
+@startuml
+skinparam linetype ortho
+hide circle
+left to right direction
+
+entity "public.transactions" as transactions {
+  *id : uuid
+  external_transaction_reference : text
+  type : text
+  special_instructions : text
+  amount : numeric
+  currency_code : text
+  short_id : text
+  paycode : text
+  amount_components : jsonb
+  details : jsonb
+  transaction_group_id : uuid
+  external_payment_reference : text
+  external_quotation_reference : text
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.transaction_states" as transaction_states {
+  *id : uuid
+  transaction_id : uuid
+  name : text
+  value : text
+  is_active : bool
+  details : jsonb
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.transaction_attributes" as transaction_attributes {
+  *id : uuid
+  transaction_id : uuid
+  name : text
+  value : text
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.line_items" as line_items {
+  *id : uuid
+  transaction_id : uuid
+  type : text
+  value_type : text
+  amount : numeric
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.line_item_types" as line_item_types {
+  *value : text
+}
+entity "public.line_item_value_types" as line_item_value_types {
+  *value : text
+}
+
+entity "public.parties" as parties {
+  *id : uuid
+  transaction_id : uuid
+  type : text
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.party_attributes" as party_attributes {
+  *id : uuid
+  party_id : uuid
+  name : text
+  value : text
+  created_at : timestamp
+  updated_at : timestamp
+  deleted_at : timestamp
+}
+
+entity "public.transaction_groups" as transaction_groups {
+  *id : uuid
+}
+entity "public.transaction_types" as transaction_types {
+  *value : text
+}
+
+' Relationships
+transactions ||--o{ transaction_states : transaction_id
+transactions ||--o{ transaction_attributes : transaction_id
+transactions ||--o{ line_items : transaction_id
+transactions ||--o{ parties : transaction_id
+line_items }o--|| line_item_types : type
+line_items }o--|| line_item_value_types : value_type
+parties ||--o{ party_attributes : party_id
+transactions }o--|| transaction_groups : transaction_group_id
+transactions }o--|| transaction_types : type
+
+@enduml

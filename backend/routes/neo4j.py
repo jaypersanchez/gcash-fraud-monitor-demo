@@ -229,65 +229,65 @@ def neo4j_graph_device(device_id: str):
         if not record:
             return jsonify({"status": "error", "message": "Device not found"}), 404
 
-            nodes = {}
-            edges = []
+        nodes = {}
+        edges = []
 
-            def add_node(key, label, ntype, extra=None):
-                if key in nodes:
-                    return
-                node = {"id": key, "label": label, "type": ntype}
-                if extra:
-                    node.update(extra)
-                nodes[key] = node
+        def add_node(key, label, ntype, extra=None):
+            if key in nodes:
+                return
+            node = {"id": key, "label": label, "type": ntype}
+            if extra:
+                node.update(extra)
+            nodes[key] = node
 
-            d = record["id"]
-            device_id_val = d.get("device_id") or d.get("email") or d.get("phoneNumber") or d.get("ssn")
-            device_type = "Device"
-            if "email" in d:
-                device_type = "Email"
-            elif "phoneNumber" in d:
-                device_type = "Phone"
-            elif "ssn" in d:
-                device_type = "SSN"
-            flagged_id = _is_flagged(d)
-            add_node(device_id_val, device_id_val, "Device", {"deviceType": device_type, "isSubject": True, "isFlagged": flagged_id})
+        d = record["id"]
+        device_id_val = d.get("device_id") or d.get("email") or d.get("phoneNumber") or d.get("ssn")
+        device_type = "Device"
+        if "email" in d:
+            device_type = "Email"
+        elif "phoneNumber" in d:
+            device_type = "Phone"
+        elif "ssn" in d:
+            device_type = "SSN"
+        flagged_id = _is_flagged(d)
+        add_node(device_id_val, device_id_val, "Device", {"deviceType": device_type, "isSubject": True, "isFlagged": flagged_id})
 
-            for acc_entry in record["accounts"] or []:
-                acc = acc_entry.get("acc") or {}
-                acc_labels = acc_entry.get("accLabels") or []
+        for acc_entry in record["accounts"] or []:
+            acc = acc_entry.get("acc") or {}
+            acc_labels = acc_entry.get("accLabels") or []
+            acc_id = acc.get("account_number") or acc.get("id")
+            acc_label = acc.get("customer_name") or acc.get("name") or acc_id
+            flagged_acc = _is_flagged(acc, acc_labels)
+            add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
+            edges.append({"source": acc_id, "target": device_id_val, "type": "HAS_IDENTIFIER"})
+
+        def handle_tx(items):
+            for item in items or []:
+                tx = item.get("tx")
+                other = item.get("other")
+                acc = item.get("acc")
+                acc_labels = item.get("accLabels") or []
+                direction = item.get("direction")
+                if not tx or not other or not acc:
+                    continue
+                tx_ref = tx.get("tx_ref") or tx.get("id")
+                add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
+                other_id = other.get("account_number") or other.get("id")
+                other_label = other.get("customer_name") or other.get("name") or other_id
                 acc_id = acc.get("account_number") or acc.get("id")
                 acc_label = acc.get("customer_name") or acc.get("name") or acc_id
                 flagged_acc = _is_flagged(acc, acc_labels)
+                add_node(other_id, other_label, "Account", {"customerName": other_label})
                 add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
-                edges.append({"source": acc_id, "target": device_id_val, "type": "HAS_IDENTIFIER"})
+                if direction == "OUT":
+                    edges.append({"source": acc_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                    edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
+                else:
+                    edges.append({"source": other_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                    edges.append({"source": tx_ref, "target": acc_id, "type": "TO"})
 
-            def handle_tx(items):
-                for item in items or []:
-                    tx = item.get("tx")
-                    other = item.get("other")
-                    acc = item.get("acc")
-                    acc_labels = item.get("accLabels") or []
-                    direction = item.get("direction")
-                    if not tx or not other or not acc:
-                        continue
-                    tx_ref = tx.get("tx_ref") or tx.get("id")
-                    add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
-                    other_id = other.get("account_number") or other.get("id")
-                    other_label = other.get("customer_name") or other.get("name") or other_id
-                    acc_id = acc.get("account_number") or acc.get("id")
-                    acc_label = acc.get("customer_name") or acc.get("name") or acc_id
-                    flagged_acc = _is_flagged(acc, acc_labels)
-                    add_node(other_id, other_label, "Account", {"customerName": other_label})
-                    add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
-                    if direction == "OUT":
-                        edges.append({"source": acc_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
-                        edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
-                    else:
-                        edges.append({"source": other_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
-                        edges.append({"source": tx_ref, "target": acc_id, "type": "TO"})
-
-            handle_tx(record.get("outbound"))
-            handle_tx(record.get("inbound"))
+        handle_tx(record.get("outbound"))
+        handle_tx(record.get("inbound"))
 
     # Overlay flags from Postgres
     account_ids = [n["id"] for n in nodes.values() if n["type"] == "Account"]
@@ -316,70 +316,70 @@ def neo4j_graph_identifier(identifier: str):
            collect(DISTINCT {tx: txOut, other: dst, otherLabels: labels(dst), direction: 'OUT', acc: acc, accLabels: labels(acc)}) AS outbound,
            collect(DISTINCT {tx: txIn, other: src, otherLabels: labels(src), direction: 'IN', acc: acc, accLabels: labels(acc)}) AS inbound
     """
+
     with get_read_session() as session:
         record = session.run(cypher, identifier=identifier).single()
         if not record:
             return jsonify({"status": "error", "message": "Identifier not found"}), 404
 
-            nodes = {}
-            edges = []
+        nodes = {}
+        edges = []
 
-            def add_node(key, label, ntype, extra=None):
-                if key in nodes:
-                    return
-                node = {"id": key, "label": label, "type": ntype}
-                if extra:
-                    node.update(extra)
-                nodes[key] = node
+        def add_node(key, label, ntype, extra=None):
+            if key in nodes:
+                return
+            node = {"id": key, "label": label, "type": ntype}
+            if extra:
+                node.update(extra)
+            nodes[key] = node
 
-            id_node = record["id"]
-            device_id_val = id_node.get("device_id") or id_node.get("email") or id_node.get("phoneNumber") or id_node.get("ssn")
-            device_type = "Device"
-            if "email" in id_node:
-                device_type = "Email"
-            elif "phoneNumber" in id_node:
-                device_type = "Phone"
-            elif "ssn" in id_node:
-                device_type = "SSN"
-            add_node(device_id_val, device_id_val, "Device", {"deviceType": device_type, "isSubject": True})
+        id_node = record["id"]
+        device_id_val = id_node.get("device_id") or id_node.get("email") or id_node.get("phoneNumber") or id_node.get("ssn")
+        device_type = "Device"
+        if "email" in id_node:
+            device_type = "Email"
+        elif "phoneNumber" in id_node:
+            device_type = "Phone"
+        elif "ssn" in id_node:
+            device_type = "SSN"
+        add_node(device_id_val, device_id_val, "Device", {"deviceType": device_type, "isSubject": True})
 
-            for acc_entry in record.get("accounts") or []:
-                acc = acc_entry.get("acc") or {}
-                acc_labels = acc_entry.get("accLabels") or []
+        for acc_entry in record.get("accounts") or []:
+            acc = acc_entry.get("acc") or {}
+            acc_labels = acc_entry.get("accLabels") or []
+            acc_id = acc.get("account_number") or acc.get("id")
+            acc_label = acc.get("customer_name") or acc.get("name") or acc_id
+            flagged_acc = _is_flagged(acc, acc_labels)
+            add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
+            edges.append({"source": acc_id, "target": device_id_val, "type": "HAS_IDENTIFIER"})
+
+        def handle_tx(items):
+            for item in items or []:
+                tx = item.get("tx")
+                other = item.get("other")
+                acc = item.get("acc")
+                acc_labels = item.get("accLabels") or []
+                direction = item.get("direction")
+                if not tx or not other or not acc:
+                    continue
+                tx_ref = tx.get("tx_ref") or tx.get("id")
+                add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
+                other_id = other.get("account_number") or other.get("id")
+                other_label = other.get("customer_name") or other.get("name") or other_id
                 acc_id = acc.get("account_number") or acc.get("id")
                 acc_label = acc.get("customer_name") or acc.get("name") or acc_id
                 flagged_acc = _is_flagged(acc, acc_labels)
+                add_node(other_id, other_label, "Account", {"customerName": other_label})
                 add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
-                edges.append({"source": acc_id, "target": device_id_val, "type": "HAS_IDENTIFIER"})
+                if direction == "OUT":
+                    edges.append({"source": acc_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                    edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
+                else:
+                    edges.append({"source": other_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
+                    edges.append({"source": tx_ref, "target": acc_id, "type": "TO"})
 
-            def handle_tx(items):
-                for item in items or []:
-                    tx = item.get("tx")
-                    other = item.get("other")
-                    acc = item.get("acc")
-                    acc_labels = item.get("accLabels") or []
-                    direction = item.get("direction")
-                    if not tx or not other or not acc:
-                        continue
-                    tx_ref = tx.get("tx_ref") or tx.get("id")
-                    add_node(tx_ref, tx_ref, "Transaction", {"amount": tx.get("amount"), "tags": tx.get("tags")})
-                    other_id = other.get("account_number") or other.get("id")
-                    other_label = other.get("customer_name") or other.get("name") or other_id
-                    acc_id = acc.get("account_number") or acc.get("id")
-                    acc_label = acc.get("customer_name") or acc.get("name") or acc_id
-                    flagged_acc = _is_flagged(acc, acc_labels)
-                    add_node(other_id, other_label, "Account", {"customerName": other_label})
-                    add_node(acc_id, acc_label, "Account", {"customerName": acc_label, "isFlagged": flagged_acc})
-                    if direction == "OUT":
-                        edges.append({"source": acc_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
-                        edges.append({"source": tx_ref, "target": other_id, "type": "TO"})
-                    else:
-                        edges.append({"source": other_id, "target": tx_ref, "type": "PERFORMS", "label": _edge_label(tx)})
-                        edges.append({"source": tx_ref, "target": acc_id, "type": "TO"})
-
-            handle_tx(record.get("outbound"))
-            handle_tx(record.get("inbound"))
-
+        handle_tx(record.get("outbound"))
+        handle_tx(record.get("inbound"))
     # Overlay flags from Postgres
     account_ids = [n["id"] for n in nodes.values() if n["type"] == "Account"]
     device_ids = [n["id"] for n in nodes.values() if n["type"] == "Device"]
