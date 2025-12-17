@@ -1,9 +1,13 @@
 const urlParams = new URLSearchParams(window.location.search || "");
+// Default API targets; if served via ngrok, use same-origin /api unless overridden.
+const SAME_ORIGIN_API = `${window.location.origin}/api`;
 const API_BASE =
   urlParams.get("apiBase") ||
   window.API_BASE ||
   localStorage.getItem("API_BASE") ||
-  "http://localhost:5005/api";
+  (window.location.hostname.includes("ngrok-free.dev")
+    ? SAME_ORIGIN_API
+    : "http://localhost:5005/api");
 
 const alertsBody = document.getElementById("alerts-body");
 const alertsEmpty = document.getElementById("alerts-empty");

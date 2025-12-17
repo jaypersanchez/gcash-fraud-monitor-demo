@@ -2,7 +2,7 @@ import os
 from contextlib import contextmanager
 
 from dotenv import load_dotenv
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase, READ_ACCESS
 
 load_dotenv()
 
@@ -19,6 +19,14 @@ def get_driver():
         yield driver
     finally:
         driver.close()
+
+
+@contextmanager
+def get_read_session():
+    """Return a read-only Neo4j session to avoid accidental writes."""
+    with get_driver() as driver:
+        with driver.session(default_access_mode=READ_ACCESS) as session:
+            yield session
 
 
 def check_connectivity():

@@ -15,7 +15,7 @@ from backend.models.alert import STATUS_VALUES
 from backend.services.faf_engine import evaluate_account
 from backend.services.feature_builder import build_features_for_account
 from backend.afasa.services import evaluate_and_tag_alert
-from backend.services.neo4j_client import get_driver
+from backend.services.neo4j_client import get_read_session
 
 
 def _get_or_create_account(session, account_number: str, customer_name: str):
@@ -69,17 +69,16 @@ def _neo4j_mule_detections(limit: int = 20):
     ORDER BY accountId
     LIMIT $limit
     """
-    with get_driver() as driver:
-        with driver.session() as session:
-            result = session.run(cypher, limit=limit)
-            detections = []
-            for record in result:
-                data = record.data()
-                acct = data.get("accountId")
-                data["summary"] = f"Mule-like account {acct} detected in Neo4j"
-                data["severity"] = "CRITICAL"
-                detections.append(data)
-            return detections
+    with get_read_session() as session:
+        result = session.run(cypher, limit=limit)
+        detections = []
+        for record in result:
+            data = record.data()
+            acct = data.get("accountId")
+            data["summary"] = f"Mule-like account {acct} detected in Neo4j"
+            data["severity"] = "CRITICAL"
+            detections.append(data)
+        return detections
 
 
 def _neo4j_identity_detections(limit: int = 10, min_risky: int = 2):
@@ -104,31 +103,30 @@ def _neo4j_identity_detections(limit: int = 10, min_risky: int = 2):
     ORDER BY riskyAccounts DESC, totalAccounts DESC
     LIMIT $limit
     """
-    with get_driver() as driver:
-        with driver.session() as session:
-            result = session.run(
-                cypher,
-                minRiskyAccounts=min_risky,
-                limit=limit,
+    with get_read_session() as session:
+        result = session.run(
+            cypher,
+            minRiskyAccounts=min_risky,
+            limit=limit,
+        )
+        detections = []
+        for record in result:
+            anchor = record["anchor"] or {}
+            detections.append(
+                {
+                    "subject_account_number": anchor.get("account_number") or anchor.get("id"),
+                    "subject_customer_name": anchor.get("customer_name") or anchor.get("name") or anchor.get("id"),
+                    "severity": "HIGH",
+                    "summary": f"Shared identifier {record['deviceId']} used by {record['totalAccounts']} accounts",
+                    "linked_devices": [{"device_id": record["deviceId"], "device_type": "Identifier"}],
+                    "details": {
+                        "pattern": "shared_identifier",
+                        "risky_accounts": record["riskyAccounts"],
+                        "total_accounts": record["totalAccounts"],
+                    },
+                }
             )
-            detections = []
-            for record in result:
-                anchor = record["anchor"] or {}
-                detections.append(
-                    {
-                        "subject_account_number": anchor.get("account_number") or anchor.get("id"),
-                        "subject_customer_name": anchor.get("customer_name") or anchor.get("name") or anchor.get("id"),
-                        "severity": "HIGH",
-                        "summary": f"Shared identifier {record['deviceId']} used by {record['totalAccounts']} accounts",
-                        "linked_devices": [{"device_id": record["deviceId"], "device_type": "Identifier"}],
-                        "details": {
-                            "pattern": "shared_identifier",
-                            "risky_accounts": record["riskyAccounts"],
-                            "total_accounts": record["totalAccounts"],
-                        },
-                    }
-                )
-            return detections
+        return detections
 
 
 def _ensure_transaction_log(session, detection: dict) -> TransactionLog:

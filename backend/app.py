@@ -26,6 +26,7 @@ from backend.models.investigator_action import InvestigatorAction
 from backend.routes.alerts import alerts_bp
 from backend.routes.cases import cases_bp
 from backend.routes.rules import rules_bp
+from backend.routes.analytics import analytics_bp
 from backend.routes.neo4j import neo4j_bp
 from backend.routes.investigator import investigator_bp
 from backend.routes.afasa import afasa_bp
@@ -597,6 +598,7 @@ def create_app():
     app.register_blueprint(neo4j_bp, url_prefix="/api")
     app.register_blueprint(investigator_bp, url_prefix="/api")
     app.register_blueprint(afasa_bp, url_prefix="/api")
+    app.register_blueprint(analytics_bp, url_prefix="/api")
 
     @app.route("/api/health", methods=["GET"])
     def health():

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Analytics Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./assets/dashboard.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  </head>
+  <body>
+    <div class="qs-shell">
+      <header class="qs-header">
+        <div class="qs-brand">
+          <div class="dot"></div>
+          <div>
+            <h1>Analytics Dashboard</h1>
+            <span>QuickSight-inspired view</span>
+          </div>
+        </div>
+        <div class="qs-header-actions">
+          <button class="qs-btn" onclick="window.location.href='/'">Investigator View</button>
+          <button class="qs-btn secondary" id="refreshDashboard">Refresh</button>
+        </div>
+      </header>
+
+      <div class="qs-layout">
+        <aside class="qs-sidebar">
+          <div class="qs-nav-item active">Overview</div>
+          <div class="qs-nav-item">Alerts</div>
+          <div class="qs-nav-item">Cases</div>
+          <div class="qs-nav-item">Graph</div>
+        </aside>
+
+        <main class="qs-main">
+          <section class="filter-bar" data-skeleton>
+            <div class="filter">
+              <label for="timeRange">Time Range</label>
+              <select id="timeRange">
+                <option value="1h">Last 1h</option>
+                <option value="24h" selected>Last 24h</option>
+                <option value="7d">Last 7d</option>
+                <option value="30d">Last 30d</option>
+              </select>
+            </div>
+            <div class="filter">
+              <label for="severity">Severity</label>
+              <select id="severity">
+                <option value="all">All</option>
+                <option value="CRITICAL">Critical</option>
+                <option value="HIGH">High</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="LOW">Low</option>
+              </select>
+            </div>
+            <div class="filter">
+              <label for="ruleId">Rule</label>
+              <select id="ruleId">
+                <option value="all">All</option>
+              </select>
+            </div>
+          </section>
+
+          <section class="kpi-grid">
+            <div class="kpi-card" data-skeleton>
+              <span class="kpi-label">Alerts (total)</span>
+              <span class="kpi-value" id="kpi-alerts-total">0</span>
+            </div>
+            <div class="kpi-card" data-skeleton>
+              <span class="kpi-label">Alerts (open)</span>
+              <span class="kpi-value" id="kpi-alerts-open">0</span>
+            </div>
+            <div class="kpi-card" data-skeleton>
+              <span class="kpi-label">Cases (open)</span>
+              <span class="kpi-value" id="kpi-cases-open">0</span>
+            </div>
+            <div class="kpi-card" data-skeleton>
+              <span class="kpi-label">Flagged suspects</span>
+              <span class="kpi-value" id="kpi-suspects">0</span>
+            </div>
+          </section>
+
+          <section class="charts-grid">
+            <div class="chart-card" data-skeleton>
+              <h3>Alerts by time</h3>
+              <div class="chart-wrapper">
+                <canvas id="chart-alerts-by-hour"></canvas>
+              </div>
+            </div>
+            <div class="chart-card" data-skeleton>
+              <h3>Alerts by severity</h3>
+              <div class="chart-wrapper">
+                <canvas id="chart-alerts-by-severity"></canvas>
+              </div>
+            </div>
+            <div class="chart-card wide-chart" data-skeleton>
+              <h3>Rule hits</h3>
+              <div class="chart-wrapper">
+                <canvas id="chart-rule-hits"></canvas>
+              </div>
+            </div>
+          </section>
+
+          <section class="table-card" data-skeleton id="top-suspects">
+            <h3>Top suspects</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Suspect ID</th>
+                  <th>Risk Score</th>
+                  <th>Flags</th>
+                  <th>Edges</th>
+                  <th>Last Seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colspan="5" class="muted">Loading…</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script src="./assets/dashboard.js"></script>
+  </body>
+</html>
